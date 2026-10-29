@@ -1,0 +1,258 @@
+{
+  "annotation_version": "1.0.0",
+  "curation_notice": "Biological groups and tags are curated interpretive display annotations. They are not manufacturer-validated cell assignments, quantitative scores, or estimated cell-origin fractions. Manufacturer Table 1 establishes assay identities only.",
+  "sources": {
+    "kit_table1": {
+      "title": "MACSPlex EV Kit Neuro, human; 140-006-716.02; Table 1, printed p.10",
+      "url": "",
+      "evidence_scope": "Manufacturer bead ID, marker name, and isotype identity only. Does not validate cell-association annotations or cell of origin.",
+      "verification_status": "user_uploaded_manual"
+    },
+    "MISEV2023": {
+      "title": "Minimal information for studies of extracellular vesicles (MISEV2023)",
+      "url": "https://doi.org/10.1002/jev2.12404",
+      "doi": "10.1002/jev2.12404",
+      "evidence_scope": "General EV characterization and reporting limitations, including marker interpretation. Does not validate kit-specific cell of origin.",
+      "verification_status": "bibliographic_metadata_verified"
+    },
+    "L1CAM2021": {
+      "title": "L1CAM is not associated with extracellular vesicles in human cerebrospinal fluid or plasma",
+      "url": "https://doi.org/10.1038/s41592-021-01174-8",
+      "doi": "10.1038/s41592-021-01174-8",
+      "evidence_scope": "Soluble L1CAM and caution interpreting plasma/CSF L1CAM as a neuronal EV identifier. Does not establish every possible L1CAM assay outcome.",
+      "verification_status": "bibliographic_metadata_verified"
+    },
+    "curated_interpretation_v1": {
+      "title": "Editorial biological-association annotation, version 1.0.0",
+      "url": "",
+      "evidence_scope": "Curated interpretive grouping and overlapping association tags for display. Not manufacturer-validated, not a quantitative score, and not a cell-origin classifier.",
+      "verification_status": "curated_interpretation; not_manufacturer_validated"
+    },
+    "uniprot:P04626": {
+      "title": "UniProt human entry P04626",
+      "url": "https://www.uniprot.org/uniprotkb/P04626/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P56199": {
+      "title": "UniProt human entry P56199",
+      "url": "https://www.uniprot.org/uniprotkb/P56199/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P16234": {
+      "title": "UniProt human entry P16234",
+      "url": "https://www.uniprot.org/uniprotkb/P16234/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P32004": {
+      "title": "UniProt human entry P32004",
+      "url": "https://www.uniprot.org/uniprotkb/P32004/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P13591": {
+      "title": "UniProt human entry P13591",
+      "url": "https://www.uniprot.org/uniprotkb/P13591/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P15144": {
+      "title": "UniProt human entry P15144",
+      "url": "https://www.uniprot.org/uniprotkb/P15144/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P16284": {
+      "title": "UniProt human entry P16284",
+      "url": "https://www.uniprot.org/uniprotkb/P16284/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P11717": {
+      "title": "UniProt human entry P11717",
+      "url": "https://www.uniprot.org/uniprotkb/P11717/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P11215": {
+      "title": "UniProt human entry P11215",
+      "url": "https://www.uniprot.org/uniprotkb/P11215/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P25063": {
+      "title": "UniProt human entry P25063",
+      "url": "https://www.uniprot.org/uniprotkb/P25063/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P08575": {
+      "title": "UniProt human entry P08575",
+      "url": "https://www.uniprot.org/uniprotkb/P08575/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:O43490": {
+      "title": "UniProt human entry O43490",
+      "url": "https://www.uniprot.org/uniprotkb/O43490/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P43003": {
+      "title": "UniProt human entry P43003",
+      "url": "https://www.uniprot.org/uniprotkb/P43003/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P04216": {
+      "title": "UniProt human entry P04216",
+      "url": "https://www.uniprot.org/uniprotkb/P04216/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P49238": {
+      "title": "UniProt human entry P49238",
+      "url": "https://www.uniprot.org/uniprotkb/P49238/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P00533": {
+      "title": "UniProt human entry P00533",
+      "url": "https://www.uniprot.org/uniprotkb/P00533/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:Q86YL7": {
+      "title": "UniProt human entry Q86YL7",
+      "url": "https://www.uniprot.org/uniprotkb/Q86YL7/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P05556": {
+      "title": "UniProt human entry P05556",
+      "url": "https://www.uniprot.org/uniprotkb/P05556/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:Q6UVK1": {
+      "title": "UniProt human entry Q6UVK1",
+      "url": "https://www.uniprot.org/uniprotkb/Q6UVK1/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P21926": {
+      "title": "UniProt human entry P21926",
+      "url": "https://www.uniprot.org/uniprotkb/P21926/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P08962": {
+      "title": "UniProt human entry P08962",
+      "url": "https://www.uniprot.org/uniprotkb/P08962/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P60033": {
+      "title": "UniProt human entry P60033",
+      "url": "https://www.uniprot.org/uniprotkb/P60033/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:Q08722": {
+      "title": "UniProt human entry Q08722",
+      "url": "https://www.uniprot.org/uniprotkb/Q08722/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P16070": {
+      "title": "UniProt human entry P16070",
+      "url": "https://www.uniprot.org/uniprotkb/P16070/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P28907": {
+      "title": "UniProt human entry P28907",
+      "url": "https://www.uniprot.org/uniprotkb/P28907/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P23229": {
+      "title": "UniProt human entry P23229",
+      "url": "https://www.uniprot.org/uniprotkb/P23229/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P19320": {
+      "title": "UniProt human entry P19320",
+      "url": "https://www.uniprot.org/uniprotkb/P19320/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P08648": {
+      "title": "UniProt human entry P08648",
+      "url": "https://www.uniprot.org/uniprotkb/P08648/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P05362": {
+      "title": "UniProt human entry P05362",
+      "url": "https://www.uniprot.org/uniprotkb/P05362/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P16671": {
+      "title": "UniProt human entry P16671",
+      "url": "https://www.uniprot.org/uniprotkb/P16671/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P11279": {
+      "title": "UniProt human entry P11279",
+      "url": "https://www.uniprot.org/uniprotkb/P11279/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:P34810": {
+      "title": "UniProt human entry P34810",
+      "url": "https://www.uniprot.org/uniprotkb/P34810/entry",
+      "evidence_scope": "Protein identity, function and localization reference. Cell-association display annotations remain interpretive and do not establish EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "uniprot:Q9P2U8": {
+      "title": "UniProt human SLC17A6 / VGLUT2 entry Q9P2U8",
+      "url": "https://www.uniprot.org/uniprotkb/Q9P2U8/entry",
+      "evidence_scope": "Human VGLUT2 protein identity, function and vesicular localization. Does not validate antibody epitope accessibility or EV origin.",
+      "verification_status": "human_entry_and_gene_mapping_verified"
+    },
+    "O4_1981": {
+      "title": "Monoclonal antibodies (O1 to O4) to oligodendrocyte cell surfaces: An immunocytological study in the central nervous system",
+      "url": "https://doi.org/10.1016/0012-1606(81)90477-2",
+      "doi": "10.1016/0012-1606(81)90477-2",
+      "evidence_scope": "Historical O4 oligodendroglial cell-surface association. Not kit clone-specific validation, plasma EV validation, or a cell-origin test.",
+      "verification_status": "bibliographic_metadata_verified"
+    },
+    "A2B5_1979": {
+      "title": "Monoclonal antibody to a plasma membrane antigen of neurons",
+      "url": "https://doi.org/10.1073/pnas.76.10.4913",
+      "doi": "10.1073/pnas.76.10.4913",
+      "evidence_scope": "Historical A2B5 neuronal plasma-membrane antigen association. Not kit clone-specific validation, plasma EV validation, or a cell-origin classifier.",
+      "verification_status": "bibliographic_metadata_verified"
+    },
+    "A2B5_glial_1983": {
+      "title": "A glial progenitor cell that develops in vitro into an astrocyte or an oligodendrocyte depending on culture medium",
+      "url": "https://doi.org/10.1038/303390a0",
+      "doi": "10.1038/303390a0",
+      "evidence_scope": "Historical glial-progenitor association in a culture context. Not kit clone-specific validation or evidence of glial EV origin in plasma.",
+      "verification_status": "bibliographic_metadata_verified"
+    },
+    "GD2_non_neural_2022": {
+      "title": "Ganglioside GD2: a novel therapeutic target in triple-negative breast cancer",
+      "url": "https://doi.org/10.1111/nyas.14700",
+      "doi": "10.1111/nyas.14700",
+      "evidence_scope": "Non-neural/tumor overlap caution from triple-negative breast cancer literature. Does not establish EV cell of origin or validate a neural assignment. Neurodevelopmental display grouping remains curated editorial context.",
+      "verification_status": "bibliographic_metadata_and_abstract_verified"
+    }
+  }
+}

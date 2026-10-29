@@ -6,6 +6,8 @@ FITC/PE identify 39 capture-bead populations. APC supplies one median signal per
 
 The input types are sample FCS files, a matched assay-blank FCS and the kit's setup-bead FCS. Gate definitions are derived and checked from that setup file; no separate provider gate/workspace file is required. See the [Figure 2/Table 1 identity guide](docs/bead-identification.md) for the complete 39-population layout and interpretation of 5,000 total beads per sample. Setup reference processing checks observed FITC/PE ordering, catching inconsistent placement before sample APC summaries.
 
+The [biological annotation guide](docs/marker-annotations.md) now defines neuron-associated, glia/progenitor-associated and shared neural/progenitor views, alongside immune/myeloid, vascular/stromal, broad receptor, lysosomal and tetraspanin views. These organize individual marker signals with overlapping tags and source-specific caveats; they do not assign EV cell of origin or calculate lineage fractions.
+
 ## Use the installed environment
 
 From `/workspace/neuronalEV`:
@@ -67,6 +69,7 @@ The second command refreshes the HTML for a completed run. Failed runs retain `f
 - `control_measurements.csv`, `isotype_controls.csv`, `qc.csv`, `qc.json`: measurement/control evidence, counts through pre-gates, missing/ambiguous populations and saturation.
 - `bead-identity-reference.png`, `bead-identity-reference.csv`, `bead_identity_audit.csv`: schematic Figure 2/Table 1 guide and observed setup-bead ordering/count evidence. The reference contains ordinal positions, not fluorescence coordinates; consistent order does not itself certify correct identity.
 - `sample_metadata.csv`, original input manifests/config, `provenance.json`: donor/acquisition mapping, hashes, versions and processing status.
+- `marker_annotations.csv`, `marker_annotation_sources.json`, `marker_views/`: versioned interpretive annotations and grouped individual-marker matrices, with annotation hashes recorded in provenance. Groups do not alter gating, numerical correction, normalization or detection rules.
 - `report.html`, `diagnostics/`: self-contained descriptive report and individual diagnostic PNGs.
 
 Correction is **sample median APC minus its matched bead-specific blank median** on the linear analysis scale. Negative results are retained and labeled `not_detected`; positive corrected values are labeled `unclassified_positive`, not automatically detected. No validated LOD/LOQ is inferred from one blank. Isotypes diagnose nonspecific signal and are not a second automatic subtraction.

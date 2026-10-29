@@ -29,6 +29,8 @@ RESERVED_COLUMNS = {
     "bead_id", "marker", "role", "n_events", "raw_median_apc", "measurement_valid", "qc_flags",
     "blank_median_apc", "corrected_apc", "detection_state", "correction_status", "normalization_factor",
     "normalized_apc", "normalization_status",
+    "biological_group", "association_tags", "gene_or_epitope", "interpretation_note",
+    "annotation_source_ids", "annotation_version",
 }
 MATCH_FIELDS = (
     "batch_id", "setup_id", "instrument_settings_id", "kit_lot",

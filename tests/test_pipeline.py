@@ -92,6 +92,68 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertIn("SYNTHETIC DATA", (self.results / "report.html").read_text())
         self.assertFalse((self.results / "failure.json").exists())
 
+    def test_annotation_snapshot_covers_all_markers_and_preserves_per_acquisition_rows(self):
+        annotations = pd.read_csv(self.results / "marker_annotations.csv", dtype=str, keep_default_na=False)
+        measurements = pd.read_csv(self.results / "measurements_long.csv", dtype=str, keep_default_na=False)
+        metadata = ["biological_group", "association_tags", "gene_or_epitope", "interpretation_note",
+                    "annotation_source_ids", "annotation_version"]
+        self.assertEqual(len(annotations), 39)
+        self.assertEqual(annotations.bead_id.nunique(), 39)
+        self.assertEqual(len(measurements), 78)
+        self.assertTrue(set(metadata).issubset(measurements.columns))
+        expected_groups = {
+            "neuron_associated": {"32", "33", "75", "96"},
+            "glial_progenitor_associated": {"24", "52", "53", "63", "65"},
+            "shared_neural_progenitor": {"46", "98"},
+            "immune_myeloid": {"34", "43", "45", "55", "77", "87", "89"},
+            "vascular_stromal_adhesion": {"23", "35", "54", "57", "64", "76", "78", "79", "85", "86"},
+            "broad_receptor_signaling": {"22", "42", "44", "56", "74"},
+            "lysosomal_trafficking": {"88"},
+            "tetraspanin_reference": {"66", "67", "68"},
+            "isotype_control": {"97", "99"},
+        }
+        self.assertEqual(set(annotations.biological_group), set(expected_groups))
+        for group, beads in expected_groups.items():
+            self.assertEqual(set(annotations.loc[annotations.biological_group == group, "bead_id"]), beads)
+        self.assertEqual(sum(annotations.role == "capture_marker"), 37)
+        self.assertEqual(set(annotations.loc[annotations.role == "isotype_control", "biological_group"]),
+                         {"isotype_control"})
+        snapshot = annotations.set_index("bead_id")
+        for column in metadata:
+            self.assertTrue(measurements[column].equals(measurements.bead_id.map(snapshot[column])))
+        self.assertEqual(measurements.acquisition_id.nunique(), 2)
+        registry = json.loads((self.results / "marker_annotation_sources.json").read_text())
+        self.assertTrue(registry["sources"])
+        provenance = json.loads((self.results / "provenance.json").read_text())
+        self.assertEqual(provenance["annotation_version"], registry["annotation_version"])
+        self.assertEqual(set(annotations.annotation_version), {registry["annotation_version"]})
+        for filename in ("marker_annotations.csv", "marker_annotation_sources.json"):
+            self.assertEqual(provenance["annotation_resource_hashes"][filename], file_hash(self.results / filename))
+        views = self.results / "marker_views"
+        self.assertEqual(len(list(views.glob("*.csv"))), 16)
+        total_columns = 0
+        for group, beads in expected_groups.items():
+            if group == "isotype_control":
+                self.assertFalse(list(views.glob("isotype_control_*.csv")))
+                continue
+            markers = set(snapshot.loc[list(beads), "marker"])
+            for scale, overall in (("background_corrected", "background_corrected.csv"),
+                                   ("normalized", "normalized.csv")):
+                view = pd.read_csv(views / f"{group}_{scale}.csv", index_col=0)
+                full = pd.read_csv(self.results / overall, index_col=0)
+                self.assertEqual(view.shape, (2, len(beads)))
+                self.assertEqual(set(view.columns), markers)
+                pd.testing.assert_frame_equal(view.sort_index(axis=1), full[view.columns].sort_index(axis=1))
+                if scale == "background_corrected":
+                    total_columns += len(view.columns)
+        self.assertEqual(total_columns, 37)
+        html = (self.results / "report.html").read_text()
+        self.assertIn("Biological marker views", html)
+        self.assertIn("Association tags can overlap", html)
+        self.assertIn("full 37-marker profiles remain available", html)
+        self.assertIn('href="marker_annotations.csv"', html)
+        self.assertIn('href="marker_annotation_sources.json"', html)
+
     def test_missing_blank_rejected_before_output_is_created(self):
         with self.altered() as (fixture, output):
             controls = pd.read_csv(fixture / "controls.csv", dtype=str)
@@ -113,6 +175,7 @@ class PipelineIntegrationTests(unittest.TestCase):
     def test_manifest_metadata_cannot_override_computed_measurements(self):
         for filename, column, value in (("samples.csv", "raw_median_apc", "0"),
                                          ("samples.csv", "corrected_apc", "100000"),
+                                         ("samples.csv", "biological_group", "neuron_associated"),
                                          ("controls.csv", "measurement_valid", "True")):
             with self.subTest(manifest=filename, column=column):
                 with self.altered() as (fixture, output):

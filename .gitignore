@@ -5,6 +5,9 @@ __pycache__/
 build/
 dist/
 data/
+!src/facs_neuro/data/
+!src/facs_neuro/data/marker_annotations.csv
+!src/facs_neuro/data/annotation_sources.json
 results/
 demo-output/
 *.fcs

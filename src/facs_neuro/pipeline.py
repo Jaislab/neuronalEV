@@ -17,6 +17,7 @@ from .config import ConfigurationError, load_config, load_inputs, readiness_erro
 from .fcs import read_fcs
 from .gating import gate_events, prepare_events, summarize, transform
 from .identity import audit_identity, write_identity_reference
+from .annotations import ANNOTATION_VERSION, annotate_measurements, load_annotations, load_sources
 from .quantify import quantify
 
 
@@ -217,6 +218,13 @@ def analyze(config_path: str | Path, output: str | Path) -> Path:
             shutil.copyfile(config[k], out / f"{k}_input.csv")
         shutil.copyfile(config["_path"], out / "analysis_input.json")
         write_identity_reference(out, panel)
+        load_annotations().to_csv(out / "marker_annotations.csv", index=False)
+        save_json(out / "marker_annotation_sources.json", load_sources())
+        provenance["annotation_version"] = ANNOTATION_VERSION
+        provenance["annotation_resource_hashes"] = {
+            name: file_hash(out / name)
+            for name in ("marker_annotations.csv", "marker_annotation_sources.json")
+        }
         # Reference controls are validated first. Failed recognition blocks analysis.
         ordered = [(False, r) for r in sorted(controls, key=lambda c: c["control_type"] != "setup_beads")]
         ordered += [(True, r) for r in samples]
@@ -262,13 +270,19 @@ def analyze(config_path: str | Path, output: str | Path) -> Path:
                 tables.append(table)
         measured = quantify(pd.concat(tables, ignore_index=True), pd.concat(blank_tables, ignore_index=True),
                             normalizers=tuple(markers), min_normalization_factor=float(floor or 0), normalize=enabled)
+        measured = annotate_measurements(measured)
         measured.to_csv(out / "measurements_long.csv", index=False)
         pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in samples]).to_csv(out / "sample_metadata.csv", index=False)
-        pd.concat(control_tables, ignore_index=True).to_csv(out / "control_measurements.csv", index=False)
+        annotate_measurements(pd.concat(control_tables, ignore_index=True)).to_csv(out / "control_measurements.csv", index=False)
         measured.loc[measured.role == "isotype_control"].to_csv(out / "isotype_controls.csv", index=False)
         for col, filename in (("raw_median_apc", "raw_median_apc.csv"), ("corrected_apc", "background_corrected.csv"),
                               ("normalized_apc", "normalized.csv")):
             measured[measured.role == "capture_marker"].pivot(index="acquisition_id", columns="marker", values=col).to_csv(out / filename)
+        views = out / "marker_views"
+        views.mkdir()
+        for group, rows in measured.loc[measured.role == "capture_marker"].groupby("biological_group", sort=False):
+            for col, scale in (("corrected_apc", "background_corrected"), ("normalized_apc", "normalized")):
+                rows.pivot(index="acquisition_id", columns="marker", values=col).to_csv(views / f"{group}_{scale}.csv")
         measured[["acquisition_id", "sample_id", "subject_id", "bead_id", "n_events", "measurement_valid",
                   "correction_status", "detection_state", "normalization_status", "qc_flags"]].to_csv(out / "qc.csv", index=False)
         failed = ~measured.measurement_valid | measured.corrected_apc.isna()

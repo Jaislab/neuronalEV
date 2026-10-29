@@ -12,6 +12,7 @@ from io import BytesIO
 import json
 from pathlib import Path
 import re
+from urllib.parse import urlsplit
 
 import numpy as np
 import pandas as pd
@@ -26,6 +27,17 @@ _REQUIRED_COLUMNS = {
     "sample_id", "acquisition_id", "bead_id", "marker", "role",
     "raw_median_apc", "corrected_apc", "normalized_apc", "n_events",
 }
+_BIOLOGICAL_FOCUS = (
+    "neuron_associated", "glial_progenitor_associated", "shared_neural_progenitor",
+)
+_BIOLOGICAL_GROUP_ORDER = _BIOLOGICAL_FOCUS + (
+    "immune_myeloid", "vascular_stromal_adhesion", "broad_receptor_signaling",
+    "lysosomal_trafficking", "tetraspanin_reference",
+)
+_ANNOTATION_COLUMNS = (
+    "biological_group", "association_tags", "gene_or_epitope", "interpretation_note",
+    "annotation_source_ids", "annotation_version",
+)
 
 
 def _natural_key(value: object) -> tuple:
@@ -156,6 +168,139 @@ def _identity_section(root: Path) -> str:
     return "\n".join(sections)
 
 
+def _source_link(url: object) -> str:
+    """Make a source URL clickable only when it is a conventional HTTPS URL."""
+    value = str(url)
+    try:
+        parsed = urlsplit(value)
+        safe = (parsed.scheme == "https" and bool(parsed.hostname)
+                and parsed.username is None and parsed.password is None
+                and not re.search(r"[\x00-\x20\x7f\\]", value))
+    except ValueError:
+        safe = False
+    label = escape(value)
+    if safe:
+        return f'<a href="{escape(value, quote=True)}" rel="noopener noreferrer">{label}</a>'
+    return label
+
+
+def _annotation_sources(root: Path) -> str:
+    path = root / "marker_annotation_sources.json"
+    if not path.is_file():
+        return "<p>No biological-annotation source registry was supplied for this run.</p>"
+    registry = _read_json(path, {})
+    if not isinstance(registry, dict) or not isinstance(registry.get("sources"), dict):
+        raise ValueError("marker_annotation_sources.json must contain a sources object")
+    content = ["<h3>Biological-annotation sources</h3>"]
+    if registry.get("annotation_version"):
+        content.append(f"<p>Annotation version: {escape(str(registry['annotation_version']))}.</p>")
+    if registry.get("curation_notice"):
+        content.append(f"<p>{escape(str(registry['curation_notice']))}</p>")
+    content.append("<ul>")
+    for identifier, source in registry["sources"].items():
+        if not isinstance(source, dict):
+            raise ValueError("Each biological-annotation source must be an object")
+        content.append(f"<li><strong>{escape(str(identifier))}</strong>: "
+                       f"{escape(str(source.get('title', 'Untitled source')))}")
+        if source.get("url"):
+            content.append(" — " + _source_link(source["url"]))
+        for key, label in (("doi", "DOI"), ("evidence_scope", "Evidence scope"),
+                           ("verification_status", "Source verification")):
+            if source.get(key):
+                content.append(f"<p>{label}: {escape(str(source[key]))}</p>")
+        content.append("</li>")
+    content.append("</ul>")
+    return "\n".join(content)
+
+
+def _biological_section(root: Path, frame: pd.DataFrame) -> str:
+    """Organize individual marker columns using a saved descriptive annotation snapshot."""
+    path = root / "marker_annotations.csv"
+    if not path.is_file():
+        return ("<h2>Biological marker views</h2><p>No biological-annotation snapshot was supplied "
+                "for this run. Full marker profiles remain available above.</p>")
+    try:
+        annotations = pd.read_csv(path, dtype=str, keep_default_na=False)
+    except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        raise ValueError(f"Cannot read marker_annotations.csv: {exc}") from exc
+    required = {"bead_id", "marker", "role", *_ANNOTATION_COLUMNS}
+    missing = sorted(required.difference(annotations.columns))
+    if missing:
+        raise ValueError("Biological annotations missing columns: " + ", ".join(missing))
+    from .config import EXPECTED_MARKERS
+    if (len(annotations) != 39 or annotations.bead_id.duplicated().any()
+            or set(annotations.bead_id) != set(EXPECTED_MARKERS)):
+        raise ValueError("Biological annotation snapshot must identify all 39 unique Neuro bead IDs")
+    for row in annotations.to_dict("records"):
+        control = row["bead_id"] in {"97", "99"}
+        if row["marker"] != EXPECTED_MARKERS[row["bead_id"]]:
+            raise ValueError("Biological annotation snapshot has a bead/marker identity mismatch")
+        if row["role"] != ("isotype_control" if control else "capture_marker"):
+            raise ValueError("Biological annotation snapshot has a bead/role mismatch")
+        if not row["biological_group"] or (row["biological_group"] == "isotype_control") != control:
+            raise ValueError("Isotype controls cannot be assigned to a biological marker view")
+    snapshot = annotations.set_index("bead_id")
+    enriched = frame.copy(deep=True)
+    for row in enriched[["bead_id", "marker", "role"]].drop_duplicates().to_dict("records"):
+        if row["bead_id"] not in snapshot.index or any(
+            row[field] != snapshot.loc[row["bead_id"], field] for field in ("marker", "role")
+        ):
+            raise ValueError("Measurements do not match their biological annotation snapshot")
+    # Read the saved snapshot, not a newer installed resource, when rerendering.
+    # Existing per-measurement annotations must agree rather than be silently replaced.
+    for column in _ANNOTATION_COLUMNS:
+        expected = enriched["bead_id"].map(snapshot[column])
+        if column in enriched and not enriched[column].fillna("").astype(str).equals(expected.astype(str)):
+            raise ValueError(f"Measurements and biological annotation snapshot disagree on {column}")
+        enriched[column] = expected
+    try:
+        from .annotations import GROUP_LABELS
+    except ImportError:
+        GROUP_LABELS = {}
+    sections = [
+        "<h2>Biological marker views</h2>",
+        "<p>These descriptive associations organize individual markers for review. Association tags "
+        "can overlap across cell types and do not identify an exclusive cell of origin. Each heatmap "
+        "column remains a single capture marker with signed background-corrected APC; no group sums, "
+        "averages, EV fractions, or additional detection thresholds are calculated. The full 37-marker "
+        "profiles remain available above. Isotype controls are excluded from these biological views.</p>",
+        "<p>CD171/L1CAM can occur as soluble protein in human plasma, so its capture signal does not "
+        "establish neuronal EVs. CD56 is also expressed by NK cells. CD140a/PDGFRA and CSPG4 can "
+        "associate with mesenchymal or pericyte populations. CD11b, CX3CR1, and CD68 also occur in "
+        "peripheral myeloid cells; their plasma signals do not count microglial EVs.</p>",
+    ]
+    capture = enriched.loc[enriched["role"] == "capture_marker"]
+    present = set(annotations.loc[annotations.role == "capture_marker", "biological_group"])
+    order = list(_BIOLOGICAL_GROUP_ORDER) + sorted(present - set(_BIOLOGICAL_GROUP_ORDER))
+    for group in order:
+        if group not in present:
+            continue
+        selected = capture.loc[capture["biological_group"] == group]
+        label = str(GROUP_LABELS.get(group, group.replace("_", " ").capitalize()))
+        ids = set(annotations.loc[(annotations.role == "capture_marker") &
+                                   (annotations.biological_group == group), "bead_id"])
+        heading = f"{label} — individual markers ({len(ids)})"
+        view = _heatmap(selected, "corrected_apc", heading)
+        downloads = []
+        if group in _BIOLOGICAL_GROUP_ORDER:
+            for scale in ("background_corrected", "normalized"):
+                filename = f"marker_views/{group}_{scale}.csv"
+                if (root / filename).is_file():
+                    downloads.append(f'<a href="{escape(filename, quote=True)}">{escape(scale)} CSV</a>')
+        if downloads:
+            view += "<p>Individual-marker tables: " + " · ".join(downloads) + "</p>"
+        if group in _BIOLOGICAL_FOCUS:
+            sections.append(view)
+        else:
+            sections.append(f"<details><summary>{escape(heading)}</summary>{view}</details>")
+    sections.append("<h3>Marker annotation snapshot</h3><p>All 39 populations are listed, including "
+                    "the two diagnostic isotype controls. These associations annotate measurements "
+                    "without changing their numerical values.</p>")
+    sections.append(_table(annotations))
+    sections.append(_annotation_sources(root))
+    return "\n".join(sections)
+
+
 def render_report(run_dir: Path | str) -> Path:
     """Render a run's CSV/JSON results to a standalone ``report.html``.
 
@@ -229,6 +374,7 @@ def render_report(run_dir: Path | str) -> Path:
         ("corrected_apc", "Background-corrected APC"),
         ("normalized_apc", "Optional tetraspanin-normalized signal"),
     ))
+    pieces.append(_biological_section(root, frame))
     pieces.append(_identity_section(root))
     pieces.append("<h2>Quality control</h2>")
     pieces.append(
@@ -270,7 +416,8 @@ def render_report(run_dir: Path | str) -> Path:
                   "These download links require the run folder alongside the standalone report.</p><ul>")
     for name in ("measurements_long.csv", "raw_median_apc.csv", "background_corrected.csv",
                  "normalized.csv", "isotype_controls.csv", "qc.csv", "sample_metadata.csv",
-                 "bead_identity_audit.csv", "bead-identity-reference.csv"):
+                 "bead_identity_audit.csv", "bead-identity-reference.csv", "marker_annotations.csv",
+                 "marker_annotation_sources.json"):
         if (root / name).is_file():
             pieces.append(f"<li><a href=\"{escape(name, quote=True)}\">{escape(name)}</a></li>")
     pieces.append("</ul><h2>Run provenance</h2><pre>")
