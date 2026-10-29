@@ -44,4 +44,6 @@ Assess actual accepted `n_events` in every population, the lower tail of that di
 
 `calibrate` writes `bead-identity-reference.png` and `bead-identity-reference.csv` alongside unreviewed templates. These are schematic identity guides, not executable gate coordinates.
 
+`scripts/identify_setup_beads.py` decodes the observed FITC/PE density peaks of a setup-bead export against this staircase and writes an unreviewed polygon template with the Table 1 names attached. The result for the 29 October 2026 Fortessa acquisition is documented in [setup-bead-identification-20261029.md](setup-bead-identification-20261029.md).
+
 `analyze` writes `bead_identity_audit.csv` for each setup reference, preserving expected ordinal levels, observed linear FITC/PE medians, accepted counts, ordering flags, record ID and setup ID. It stops on missing populations or inconsistent ordering before producing sample APC summaries, retaining the audit for investigation. The report embeds the reference and audit when present. Real sample behavior remains unvalidated until the supplied FCS files have been inspected and the derived assignments checked.

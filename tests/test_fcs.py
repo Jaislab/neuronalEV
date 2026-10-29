@@ -121,6 +121,14 @@ class FCSReaderTests(unittest.TestCase):
         actual = self.read(encode_fcs([[3]], changes={"$P1G": None}))
         np.testing.assert_array_equal(actual.events, [[3]])
 
+    def test_diva_time_gain_is_tolerated_but_not_applied(self):
+        # FACSDiva writes $PnG equal to $TIMESTEP for the Time parameter.
+        actual = self.read(encode_fcs([[3, 250]], changes={"$P2N": "Time", "$P2G": "0.01", "$TIMESTEP": "0.01"}))
+        np.testing.assert_array_equal(actual.events, [[3, 250]])
+        self.assertEqual(actual.metadata["p2g"], "0.01")
+        with self.assertRaisesRegex(FCSFormatError, "gain"):
+            self.read(encode_fcs([[3, 250]], changes={"$P2N": "PE-A", "$P2G": "0.01"}))
+
     def test_unsupported_scaling_is_not_silently_interpreted(self):
         for changes, message in [({"$P1E": "4,1"}, "amplification"),
                                  ({"$P1E": None}, "P1E"),

@@ -50,7 +50,7 @@ No GPU, database, web server or live background process is needed. The code uses
 
 Create the parent `results/` directory before writing an inspection JSON file if needed. `inspect` works on the incomplete template and reports what is missing; exit code 2 is expected until inputs are complete. It does not certify gates. `calibrate` supplies unreviewed overview PNGs and **empty** population polygons. It does not invent gates, align clusters, or assign identities automatically.
 
-6. Establish scatter bead and singlet gates, then all 39 FITC/PE population polygons against setup beads and the manufacturer identity map. Confirm them with an expert-reviewed pilot including low/high signals and challenging populations. Configure a justified minimum bead count and optional normalization floor. Only then set `reviewed: true`, a nonempty `gate_version`, and `review_note`. See [configuration details](docs/configuration.md).
+6. Establish scatter bead and singlet gates, then all 39 FITC/PE population polygons against setup beads and the manufacturer identity map. `scripts/identify_setup_beads.py` derives an unreviewed template from a setup-bead export (see below). Confirm the polygons with an expert-reviewed pilot including low/high signals and challenging populations. Configure a justified minimum bead count and optional normalization floor. Only then set `reviewed: true`, a nonempty `gate_version`, and `review_note`. See [configuration details](docs/configuration.md).
 7. Run the reviewed configuration:
 
 ```bash
@@ -59,6 +59,17 @@ Create the parent `results/` directory before writing an inspection JSON file if
 ```
 
 The second command refreshes the HTML for a completed run. Failed runs retain `failure.json` and incomplete provenance; they do not produce a completed report. Analysis exit code 3 means processing completed but measurement QC failed; review the report/CSV before interpreting values. Exit code 0 means software processing completed, not biological or assay validation. Exit code 2 indicates invalid/incomplete input or a processing error.
+
+## Derive population gates from a setup-bead file
+
+```bash
+.venv/bin/python scripts/identify_setup_beads.py data/raw/20261029_Beads_5000.fcs \
+    --setup-id fortessa_20261029 --output results/identify-20261029
+```
+
+The script gates singlet beads on scatter, finds the density peaks of FITC versus PE in the chosen gating transform, matches them to the manufacturer's Figure 2 staircase and names them from Table 1. It writes `setup-template.json` (a setup object with `reviewed: false`), `populations.csv` with observed medians and counts, `identified.png` and `summary.json`, and exits with code 2 when the 39 populations are not resolved or their Figure 2 order is violated. It never reads APC for identity and never marks anything reviewed.
+
+The supplied LSRFortessa setup-bead export of 29 October 2026 resolved all 39 populations with consistent Figure 2 order; `config/analysis.json` carries that unreviewed template as setup `fortessa_20261029`, with the evidence in [`docs/setup-bead-identification-20261029.md`](docs/setup-bead-identification-20261029.md) and `config/gates/`. Review the overlay, set `min_events_per_population`, `gate_version` and `review_note`, then set `reviewed: true`.
 
 ## Outputs and interpretation
 
@@ -78,7 +89,7 @@ The current release keeps technical acquisitions separate and produces descripti
 ## Supported FCS and gating scope
 
 - FCS3.0/3.1, single-dataset list mode, linear float32/float64 or byte-aligned unsigned integer parameters, common endianness, unique `$PnN` names.
-- Nonzero `$PnE`, nonunit `$PnG`, supplemental TEXT, multiple datasets, malformed offsets and nonfinite event values are explicitly rejected. Request a compatible export or extend/validate the reader separately; do not strip metadata to bypass a rejection. Real FACSDiva files still require comparison against acquisition software.
+- Nonzero `$PnE`, nonunit `$PnG` (tolerated only on the Time parameter, where FACSDiva stores the time step), supplemental TEXT, multiple datasets, malformed offsets and nonfinite event values are explicitly rejected. Request a compatible export or extend/validate the reader separately; do not strip metadata to bypass a rejection. Real FACSDiva files still require comparison against acquisition software.
 - Explicit compensation policies: `none` with rationale, `embedded` matrix, or `explicit` matrix. Already-compensated inputs cannot receive another matrix. An embedded matrix does not establish whether compensation was already applied.
 - Reviewed polygon gates in linear or asinh coordinates. Pre-gates use conventional Fortessa `FSC-*`, `SSC-*`, and `Time` names, with actual area-vs-height/width singlet geometry. No gating on APC. Every manufacturer bead ID must have one population definition; overlapping events are excluded and affected populations flagged.
 - Saturation is checked on original APC before computational compensation using a conservative `$PnR - 1` boundary or a documented explicit threshold. Already-compensated inputs need a `saturation_review_note` attesting review of original acquisition QC; otherwise measurements are invalid because original clipping cannot be established.

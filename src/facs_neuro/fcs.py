@@ -6,7 +6,7 @@ encodings; escaped TEXT delimiters; DATA offsets from HEADER or TEXT. Returned
 events are float64 on the file's *uncompensated or already compensated* linear
 measurement scale. Compensation status cannot be inferred by this reader.
 
-Nonzero amplification decades ($PnE), nonunit gain ($PnG), supplemental TEXT,
+Nonzero amplification decades ($PnE), nonunit gain ($PnG, except on Time), supplemental TEXT,
 multi-dataset files, nonfinite events, and inconsistent offsets fail explicitly.
 This intentionally avoids guessing physical scaling, repairing malformed files,
 or silently applying a compensation matrix. Actual instrument exports still need
@@ -179,7 +179,9 @@ def read_fcs(path: str | Path) -> FCSData:
         if decades != 0 or zero != 0:
             raise FCSFormatError(f"Nonlinear $P{index}E amplification is unsupported; export linear values")
         gain = _number(metadata.get(prefix + "g", "1"), f"$P{index}G")
-        if gain != 1:
+        if gain != 1 and name.casefold() != "time":
+            # FACSDiva stores $TIMESTEP again as the Time parameter's $PnG. Time is
+            # never a measurement axis here, so that gain is kept in metadata only.
             raise FCSFormatError(f"Nonunit $P{index}G gain is unsupported; export calibrated linear values")
         value_range = _number(_required(metadata, prefix + "r"), f"$P{index}R")
         if value_range <= 0:
