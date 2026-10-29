@@ -74,4 +74,35 @@ Complete the review with `reviewed: true`, a version string and a substantive `r
 
 The default is disabled. To enable it, declare a fixed unique subset of CD9/CD63/CD81 and an explicit `minimum_factor`. Every chosen corrected normalizer must be valid and positive; their arithmetic mean must exceed the floor. Determine that floor from pilot/background behavior. Do not copy the synthetic demonstration's value. Invalid normalizers suppress normalized output and append reasons; raw/corrected results remain available where valid.
 
-Negative corrected target-marker values remain signed, including after valid normalization. They are labeled `not_detected`, not removed. Neither positive correction nor successful normalization is a validated detection limit or an EV-purity assessment.
+In the default assay-blank mode, negative corrected target-marker values remain signed, including after valid normalization. They are labeled `not_detected`, not removed. Neither positive correction nor successful normalization is a validated detection limit or an EV-purity assessment. The setup-baseline fallback below uses baseline-relative states instead.
+
+## Explicit setup-bead baseline fallback
+
+The default background mode remains a matched no-EV assay blank. If the assay blank is known to be invalid and a setup-bead reference is deliberately selected as a limited fallback, declare the choice explicitly:
+
+```json
+"background": {
+  "mode": "setup_baseline",
+  "rationale": "The assay blank was processed incorrectly; use the specified setup-bead file as a limited baseline. Detection-reagent background is unmeasured."
+}
+```
+
+The existing sample `blank_id` column identifies the selected reference in either mode. In `setup_baseline` mode it must reference a control of type `setup_beads`; no detection cocktail is falsely attributed to that control. Match batch, setup, instrument settings and kit lot. A single physical control row may serve both as `setup_control_id` and the baseline reference without duplicating its FCS path. Separate setup controls can be used for identification and baseline when explicitly selected and compatible.
+
+This subtracts the bead/setup baseline only. It does **not** correct nonspecific detection-reagent binding or replace a fully processed no-EV assay blank. Every result retains `background_mode`, `background_reference_id`, `background_limitation` and a `setup_baseline_only` QC flag. Signed values and missingness remain unchanged. Baseline states are `below_setup_baseline`, `at_setup_baseline`, and `above_setup_baseline`; none is a validated detection/absence call. Optional normalization does not remove this limitation. Count, ambiguity and saturation requirements remain unchanged; a sparse baseline cannot be rescued by silently relaxing QC.
+
+## Audited sample exclusions
+
+Known preparation failures can be excluded explicitly without converting missing assay evidence into biological zeros:
+
+```json
+"sample_exclusions": {
+  "10": "Capture beads lost during preparation; exclude biological interpretation."
+}
+```
+
+All acquisitions of an excluded sample are omitted from numerical analysis. The original full input manifest is retained, while `excluded_samples.csv` and provenance preserve the sample IDs and exact reasons. Excluded samples do not require usable FCS files and do not acquire invented zero measurements. Unknown sample IDs, empty reasons and an exclusion leaving no active samples are errors. `inspect` distinguishes input, active and excluded acquisitions. The default empty exclusion map preserves every sample.
+
+## Native FACSDiva Time values
+
+The reader supports the observed floating-point FACSDiva convention in which a channel named `Time` has nonunit `$PnG` equal to a positive `$TIMESTEP`. It preserves the stored native Time values and metadata; a Time pre-gate must therefore use native ticks. Multiply by `$TIMESTEP` once for seconds in separate diagnostics. Signal/scatter channels still require unit gain, and missing or mismatched timestep metadata is rejected. This exception never changes FITC, PE or APC measurements.

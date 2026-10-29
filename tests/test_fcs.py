@@ -144,6 +144,49 @@ class FCSReaderTests(unittest.TestCase):
         actual = self.read(encode_fcs([[3]], changes={"$P1G": None}))
         np.testing.assert_array_equal(actual.events, [[3]])
 
+    def test_facsdiva_nonunit_time_gain_preserves_native_ticks_and_signed_apc(self):
+        channels = ["FSC-A", "FSC-H", "FSC-W", "SSC-A", "APC-A", "FITC-A", "PE-A", "Time"]
+        values = [[100, 90, 80, 70, -4.5, 12, 13, 22.5],
+                  [101, 91, 81, 71, 57.25, 14, 15, 3868.75]]
+        changes = {f"$P{i}N": name for i, name in enumerate(channels, 1)}
+        changes.update({"$P8G": "0.01", "$TIMESTEP": "0.01"})
+        for datatype, time_name in [("F", "Time"), ("D", "tImE")]:
+            with self.subTest(datatype=datatype, time_name=time_name):
+                changes["$P8N"] = time_name
+                actual = self.read(encode_fcs(values, datatype=datatype, endian=">", changes=changes))
+                np.testing.assert_array_equal(actual.events, values)
+                self.assertEqual(actual.metadata["p8g"], "0.01")
+                self.assertEqual(actual.metadata["timestep"], "0.01")
+                np.testing.assert_array_equal(actual.events[:, 7], [22.5, 3868.75])
+                np.testing.assert_allclose(actual.events[:, 7] * float(actual.metadata["timestep"]),
+                                           [.225, 38.6875])
+
+    def test_nonunit_time_gain_requires_a_positive_matching_timestep(self):
+        for timestep in [None, "0", "-0.01", "nan", "inf", "0.02"]:
+            with self.subTest(timestep=timestep):
+                with self.assertRaisesRegex(FCSFormatError, "TIMESTEP"):
+                    self.read(encode_fcs([[20]], changes={
+                        "$P1N": "Time", "$P1G": "0.01", "$TIMESTEP": timestep,
+                    }))
+        for gain in ["0", "-0.01", "nan", "inf"]:
+            with self.subTest(gain=gain):
+                with self.assertRaises(FCSFormatError):
+                    self.read(encode_fcs([[20]], changes={
+                        "$P1N": "Time", "$P1G": gain, "$TIMESTEP": "0.01",
+                    }))
+
+    def test_time_exception_does_not_enable_nonunit_signal_scatter_or_integer_gains(self):
+        for name in ["APC-A", "FSC-A", "Time-A"]:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(FCSFormatError, "gain is unsupported"):
+                    self.read(encode_fcs([[20]], changes={
+                        "$P1N": name, "$P1G": "0.01", "$TIMESTEP": "0.01",
+                    }))
+        with self.assertRaisesRegex(FCSFormatError, "gain is unsupported"):
+            self.read(encode_fcs([[20]], datatype="I", changes={
+                "$P1N": "Time", "$P1G": "0.01", "$TIMESTEP": "0.01",
+            }))
+
     def test_unsupported_scaling_is_not_silently_interpreted(self):
         for changes, message in [({"$P1E": "4,1"}, "amplification"),
                                  ({"$P1E": None}, "P1E"),

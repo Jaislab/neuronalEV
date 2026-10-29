@@ -6,8 +6,13 @@ encodings; escaped TEXT delimiters; DATA offsets from HEADER or TEXT. Returned
 events are float64 on the file's *uncompensated or already compensated* linear
 measurement scale. Compensation status cannot be inferred by this reader.
 
-Nonzero amplification decades ($PnE), nonunit gain ($PnG), supplemental TEXT,
-multi-dataset files, nonfinite events, and inconsistent offsets fail explicitly.
+Nonzero amplification decades ($PnE), nonunit signal/scatter gain ($PnG),
+supplemental TEXT, multi-dataset files, nonfinite events, and inconsistent offsets
+fail explicitly. A narrow FACSDiva floating-point Time exception permits a
+positive nonunit gain only when it matches a finite positive $TIMESTEP. Time
+values remain native acquisition ticks, including for Time gates; convert to
+seconds by multiplying by $TIMESTEP exactly once. Neither gain division nor
+implicit Time conversion is performed.
 Empty vendor TEXT values can be ambiguous with escaped delimiters; ambiguous
 keywords containing the TEXT delimiter are rejected rather than repaired.
 This intentionally avoids guessing physical scaling, repairing malformed files,
@@ -127,6 +132,9 @@ def read_fcs(path: str | Path) -> FCSData:
     Metadata keys are lowercase with a leading ``$`` removed. Channel names are
     $PnN values, not optional stain labels ($PnS). Integer counts are converted
     exactly to float64 or rejected if they exceed its exact integer range.
+    FACSDiva F/D ``Time`` values remain native acquisition ticks. A nonunit Time
+    gain is accepted only with a matching positive $TIMESTEP; seconds, when
+    needed, equal native Time times $TIMESTEP, without also applying $PnG.
     """
     raw = Path(path).read_bytes()
     if len(raw) < 58:
@@ -188,7 +196,15 @@ def read_fcs(path: str | Path) -> FCSData:
             raise FCSFormatError(f"Nonlinear $P{index}E amplification is unsupported; export linear values")
         gain = _number(metadata.get(prefix + "g", "1"), f"$P{index}G")
         if gain != 1:
-            raise FCSFormatError(f"Nonunit $P{index}G gain is unsupported; export calibrated linear values")
+            if datatype not in {"F", "D"} or name.casefold() != "time":
+                raise FCSFormatError(f"Nonunit $P{index}G gain is unsupported; export calibrated linear values")
+            if gain <= 0:
+                raise FCSFormatError("Nonunit Time gain must be positive and match a positive $TIMESTEP")
+            if "timestep" not in metadata:
+                raise FCSFormatError("Nonunit Time gain requires a finite positive matching $TIMESTEP")
+            timestep = _number(metadata["timestep"], "$TIMESTEP")
+            if timestep <= 0 or not math.isclose(gain, timestep, rel_tol=1e-12, abs_tol=0.0):
+                raise FCSFormatError("Nonunit Time gain requires a finite positive matching $TIMESTEP")
         value_range = _number(_required(metadata, prefix + "r"), f"$P{index}R")
         if value_range <= 0:
             raise FCSFormatError(f"$P{index}R must be positive")

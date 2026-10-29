@@ -72,6 +72,49 @@ def _read_json(path: Path, default: object) -> object:
         raise ValueError(f"Cannot read report input {path.name}: {exc}") from exc
 
 
+def _background_context(frame: pd.DataFrame, provenance: dict) -> tuple[str, str]:
+    """Use explicit run semantics and reject conflicting measurement labels."""
+    background = provenance.get("background", {})
+    if not isinstance(background, dict):
+        raise ValueError("Run background provenance must be an object")
+    modes = set(frame["background_mode"]) if "background_mode" in frame else set()
+    if len(modes) > 1 or modes - {"assay_blank", "setup_baseline"}:
+        raise ValueError("Report measurements contain inconsistent background modes")
+    mode = background.get("mode", next(iter(modes), "assay_blank"))
+    if mode not in {"assay_blank", "setup_baseline"} or (modes and modes != {mode}):
+        raise ValueError("Measurements and run provenance disagree on background mode")
+    return mode, str(background.get("rationale", ""))
+
+
+def _exclusion_section(root: Path, frame: pd.DataFrame, provenance: dict) -> str:
+    path = root / "excluded_samples.csv"
+    if path.is_file():
+        try:
+            excluded = pd.read_csv(path, dtype=str, keep_default_na=False)
+        except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+            raise ValueError(f"Cannot read excluded_samples.csv: {exc}") from exc
+    else:
+        records = provenance.get("sample_exclusions", [])
+        if not isinstance(records, list) or any(not isinstance(row, dict) for row in records):
+            raise ValueError("sample_exclusions provenance must be a list of records")
+        excluded = pd.DataFrame(records)
+    if excluded.empty:
+        return ""
+    if not {"sample_id", "exclusion_reason"}.issubset(excluded.columns):
+        raise ValueError("Excluded sample audit requires sample_id and exclusion_reason")
+    if excluded["sample_id"].isin(frame["sample_id"]).any():
+        raise ValueError("Excluded sample IDs remain in report measurements")
+    if excluded["sample_id"].eq("").any() or excluded["exclusion_reason"].str.strip().eq("").any():
+        raise ValueError("Excluded sample audit requires nonempty sample IDs and reasons")
+    columns = [name for name in ("sample_id", "acquisition_id", "subject_id", "exclusion_reason")
+               if name in excluded]
+    return ("<h2>Explicit sample exclusions</h2>"
+            f"<p>{excluded['sample_id'].nunique()} excluded sample IDs; {len(excluded)} excluded acquisition "
+            "records. These records are separate from the active-sample counts above. Excluded samples "
+            "have no rows in the numerical results and are not represented by fabricated zeros.</p>"
+            + _table(excluded[columns]))
+
+
 def _heatmap(frame: pd.DataFrame, value: str, title: str) -> str:
     capture = frame.loc[frame["role"] == "capture_marker"].copy()
     if capture.empty:
@@ -213,7 +256,7 @@ def _annotation_sources(root: Path) -> str:
     return "\n".join(content)
 
 
-def _biological_section(root: Path, frame: pd.DataFrame) -> str:
+def _biological_section(root: Path, frame: pd.DataFrame, *, background_mode: str = "assay_blank") -> str:
     """Organize individual marker columns using a saved descriptive annotation snapshot."""
     path = root / "marker_annotations.csv"
     if not path.is_file():
@@ -257,11 +300,12 @@ def _biological_section(root: Path, frame: pd.DataFrame) -> str:
         from .annotations import GROUP_LABELS
     except ImportError:
         GROUP_LABELS = {}
+    corrected_label = "Setup-baseline-subtracted APC" if background_mode == "setup_baseline" else "background-corrected APC"
     sections = [
         "<h2>Biological marker views</h2>",
         "<p>These descriptive associations organize individual markers for review. Association tags "
         "can overlap across cell types and do not identify an exclusive cell of origin. Each heatmap "
-        "column remains a single capture marker with signed background-corrected APC; no group sums, "
+        f"column remains a single capture marker with signed {corrected_label}; no group sums, "
         "averages, EV fractions, or additional detection thresholds are calculated. The full 37-marker "
         "profiles remain available above. Isotype controls are excluded from these biological views.</p>",
         "<p>CD171/L1CAM can occur as soluble protein in human plasma, so its capture signal does not "
@@ -280,13 +324,17 @@ def _biological_section(root: Path, frame: pd.DataFrame) -> str:
         ids = set(annotations.loc[(annotations.role == "capture_marker") &
                                    (annotations.biological_group == group), "bead_id"])
         heading = f"{label} — individual markers ({len(ids)})"
+        if background_mode == "setup_baseline":
+            heading = f"{label} — Setup-baseline-subtracted APC — individual markers ({len(ids)})"
         view = _heatmap(selected, "corrected_apc", heading)
         downloads = []
         if group in _BIOLOGICAL_GROUP_ORDER:
             for scale in ("background_corrected", "normalized"):
                 filename = f"marker_views/{group}_{scale}.csv"
                 if (root / filename).is_file():
-                    downloads.append(f'<a href="{escape(filename, quote=True)}">{escape(scale)} CSV</a>')
+                    scale_label = ("Setup-baseline-subtracted APC" if background_mode == "setup_baseline"
+                                   and scale == "background_corrected" else scale)
+                    downloads.append(f'<a href="{escape(filename, quote=True)}">{escape(scale_label)} CSV</a>')
         if downloads:
             view += "<p>Individual-marker tables: " + " · ".join(downloads) + "</p>"
         if group in _BIOLOGICAL_FOCUS:
@@ -326,6 +374,8 @@ def render_report(run_dir: Path | str) -> Path:
         raise ValueError("provenance.json must contain an object.")
     if provenance.get("status") == "incomplete":
         raise ValueError("Cannot report an incomplete run")
+    background_mode, background_rationale = _background_context(frame, provenance)
+    setup_baseline = background_mode == "setup_baseline"
     qc = _read_json(root / "qc.json", [])
     if not isinstance(qc, list) or any(not isinstance(row, dict) for row in qc):
         raise ValueError("qc.json must contain a list of objects.")
@@ -338,6 +388,27 @@ def render_report(run_dir: Path | str) -> Path:
                 if "subject_id" in frame else None)
     n_markers = frame.loc[frame["role"] == "capture_marker", "bead_id"].nunique()
     n_controls = frame.loc[frame["role"] == "isotype_control", "bead_id"].nunique()
+    interpretation = (
+        "<p>Setup-baseline-subtracted APC is the sample median minus the chosen kit setup-bead median. "
+        "Kit setup beads alone do not measure detection-reagent or cocktail background. "
+        "Detection-reagent background is unmeasured by this reference, so below/at/above setup baseline "
+        "describes the numerical comparison only and does not establish detection or nondetection. "
+        "Negative signed values are retained. Optional tetraspanin normalization does not remove this "
+        "limitation; raw APC values remain available. No validated LOD/LOQ or inferential statistics "
+        "are supplied by this report. Missing/invalid measurements remain unavailable, not zero.</p>"
+        if setup_baseline else
+        "<p>Signed background-corrected values are retained. Negative corrected values are labeled "
+        "not detected; zero is at background. A positive corrected value alone is not a validated "
+        "detection call. No validated LOD/LOQ or inferential statistics are supplied by this report. "
+        "Missing/invalid measurements are unavailable, not zero. Tetraspanin normalization is optional "
+        "and changes the biological question.</p>"
+    )
+    baseline_banner = (
+        '<p class="banner">SETUP-BEAD BASELINE ONLY — detection-reagent background is unmeasured; '
+        'the subtracted values do not establish detection or nondetection.</p>'
+        f"<p>Reference-selection rationale: {escape(background_rationale or 'Not recorded')}.</p>"
+        if setup_baseline else ""
+    )
     pieces = ["<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">",
               "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
               "<title>MACSPlex EV Neuro analysis report</title>",
@@ -352,6 +423,7 @@ def render_report(run_dir: Path | str) -> Path:
               "details{margin:1rem 0}a{color:#1d4ed8}</style></head><body>",
               "<h1>MACSPlex EV Neuro analysis report</h1>",
               f"<p class=\"banner\">{escape(banner)}</p>",
+              baseline_banner,
               f"<p>Validation status recorded by the run: <strong>{escape(str(validation))}</strong>.</p>",
               "<div class=\"summary\"><p>"
               f"{frame['sample_id'].nunique()} sample IDs; {frame['acquisition_id'].nunique()} acquisitions; "
@@ -363,18 +435,16 @@ def render_report(run_dir: Path | str) -> Path:
               "The CD9/CD63/CD81 cocktail produces a conditional capture/detection signal. "
               "These measurements do not establish absolute EV counts, EV purity, neuronal origin, "
               "or single-EV co-expression. ExoQuick enrichment can retain non-EV plasma material.</p>",
-              "<p>Signed background-corrected values are retained. Negative corrected values are labeled "
-              "not detected; zero is at background. A positive corrected value alone is not a validated "
-              "detection call. No validated LOD/LOQ or inferential statistics are supplied by this report. "
-              "Missing/invalid measurements are unavailable, not zero. Tetraspanin normalization is optional "
-              "and changes the biological question.</p>",
+              interpretation,
               "<h2>Marker profiles</h2>"]
     pieces.extend(_heatmap(frame, key, title) for key, title in (
         ("raw_median_apc", "Raw APC medians — QC-valid measurements"),
-        ("corrected_apc", "Background-corrected APC"),
-        ("normalized_apc", "Optional tetraspanin-normalized signal"),
+        ("corrected_apc", "Setup-baseline-subtracted APC" if setup_baseline else "Background-corrected APC"),
+        ("normalized_apc", "Setup-baseline-subtracted APC — optional tetraspanin normalization"
+         if setup_baseline else "Optional tetraspanin-normalized signal"),
     ))
-    pieces.append(_biological_section(root, frame))
+    pieces.append(_biological_section(root, frame, background_mode=background_mode))
+    pieces.append(_exclusion_section(root, frame, provenance))
     pieces.append(_identity_section(root))
     pieces.append("<h2>Quality control</h2>")
     pieces.append(
@@ -394,9 +464,11 @@ def render_report(run_dir: Path | str) -> Path:
                                 "normalization_status") if c in frame]
     pieces.append(f"<p>{len(issues)} measurement rows have QC flags or invalid measurements.</p>")
     pieces.append(_table(issues[issue_columns]))
-    pieces.append("<h2>Isotype controls</h2><p>Isotype controls diagnose nonspecific binding. "
-                  "They do not replace the marker-specific assay blank and are not automatically "
-                  "subtracted a second time.</p>")
+    pieces.append("<h2>Isotype controls</h2><p>Isotype controls diagnose nonspecific binding. " + (
+        "Their displayed values use the same setup-bead-only reference; detection-reagent "
+        "background remains unmeasured.</p>" if setup_baseline else
+        "They do not replace the marker-specific assay blank and are not automatically "
+        "subtracted a second time.</p>"))
     control_columns = [c for c in ("sample_id", "acquisition_id", "bead_id", "marker", "n_events",
                                   "raw_median_apc", "corrected_apc", "qc_flags") if c in frame]
     pieces.append(_table(frame.loc[frame["role"] == "isotype_control", control_columns]))
@@ -417,9 +489,10 @@ def render_report(run_dir: Path | str) -> Path:
     for name in ("measurements_long.csv", "raw_median_apc.csv", "background_corrected.csv",
                  "normalized.csv", "isotype_controls.csv", "qc.csv", "sample_metadata.csv",
                  "bead_identity_audit.csv", "bead-identity-reference.csv", "marker_annotations.csv",
-                 "marker_annotation_sources.json"):
+                 "marker_annotation_sources.json", "excluded_samples.csv"):
         if (root / name).is_file():
-            pieces.append(f"<li><a href=\"{escape(name, quote=True)}\">{escape(name)}</a></li>")
+            label = "Setup-baseline-subtracted APC CSV (background_corrected.csv)" if setup_baseline and name == "background_corrected.csv" else name
+            pieces.append(f"<li><a href=\"{escape(name, quote=True)}\">{escape(label)}</a></li>")
     pieces.append("</ul><h2>Run provenance</h2><pre>")
     pieces.append(escape(json.dumps(provenance, indent=2, ensure_ascii=False)))
     pieces.append("</pre></body></html>")

@@ -163,6 +163,86 @@ class PipelineIntegrationTests(unittest.TestCase):
         self.assertIn('href="marker_annotations.csv"', html)
         self.assertIn('href="marker_annotation_sources.json"', html)
 
+    def test_setup_baseline_without_assay_blank_preserves_reference_only_semantics(self):
+        with self.altered() as (fixture, output):
+            path = fixture / "analysis.json"
+            config = json.loads(path.read_text())
+            config["background"] = {
+                "mode": "setup_baseline",
+                "rationale": "Synthetic kit setup beads only; assay blank unavailable",
+            }
+            path.write_text(json.dumps(config))
+            controls = pd.read_csv(fixture / "controls.csv", dtype=str, keep_default_na=False)
+            controls = controls[controls.control_type == "setup_beads"].copy()
+            controls["detection_reagent"] = ""
+            controls["incubation_protocol"] = ""
+            controls.to_csv(fixture / "controls.csv", index=False)
+            (fixture / "fcs" / "blank.fcs").unlink()
+            samples = pd.read_csv(fixture / "samples.csv", dtype=str, keep_default_na=False)
+            samples["blank_id"] = "setup"
+            samples.to_csv(fixture / "samples.csv", index=False)
+            analyze(path, output)
+            measured = pd.read_csv(output / "measurements_long.csv", dtype={
+                "sample_id": str, "acquisition_id": str, "bead_id": str,
+            })
+            self.assertEqual(len(measured), 78)
+            self.assertEqual(set(measured.background_mode), {"setup_baseline"})
+            self.assertEqual(set(measured.background_reference_id), {"setup"})
+            self.assertEqual(set(measured.background_limitation),
+                             {"setup_baseline_only_reagent_background_unmeasured"})
+            self.assertEqual(set(measured.correction_status), {"valid"})
+            self.assertTrue(measured.qc_flags.str.contains("setup_baseline_only").all())
+            self.assertTrue(set(measured.detection_state).issubset(
+                {"below_setup_baseline", "at_setup_baseline", "above_setup_baseline"}))
+            self.assertNotIn("not_detected", set(measured.detection_state))
+            self.assertTrue(np.isfinite(measured.normalized_apc).all())
+            reference = pd.read_csv(output / "control_measurements.csv", dtype={"bead_id": str})
+            self.assertEqual(set(reference.control_id), {"setup"})
+            expected = measured.raw_median_apc - measured.bead_id.map(reference.set_index("bead_id").raw_median_apc)
+            np.testing.assert_allclose(measured.corrected_apc, expected, rtol=0, atol=1e-10)
+            first = measured[(measured.sample_id == "1") & (measured.bead_id == "22")].iloc[0]
+            self.assertLess(first.corrected_apc, 0)
+            self.assertEqual(first.detection_state, "below_setup_baseline")
+            provenance = json.loads((output / "provenance.json").read_text())
+            self.assertEqual(provenance["background"]["mode"], "setup_baseline")
+            self.assertEqual(provenance["background"]["rationale"], config["background"]["rationale"])
+            self.assertEqual(provenance["status"], "completed")
+            self.assertEqual(len(provenance["inputs"]), 3)
+            html = (output / "report.html").read_text()
+            self.assertIn("SETUP-BEAD BASELINE ONLY", html)
+            self.assertIn("Setup-baseline-subtracted APC", html)
+            self.assertIn("detection-reagent background is unmeasured", html)
+            self.assertNotIn("Negative corrected values are labeled not detected", html)
+
+    def test_excluded_missing_fcs_is_audited_without_fabricated_measurement_rows(self):
+        with self.altered() as (fixture, output):
+            path = fixture / "analysis.json"
+            config = json.loads(path.read_text())
+            config["sample_exclusions"] = {"1": "Synthetic test: confirmed bead loss"}
+            path.write_text(json.dumps(config))
+            (fixture / "fcs" / "1.fcs").unlink()
+            analyze(path, output)
+            measured = pd.read_csv(output / "measurements_long.csv", dtype={"sample_id": str})
+            self.assertEqual(len(measured), 39)
+            self.assertEqual(set(measured.sample_id), {"2"})
+            original = pd.read_csv(output / "samples_input.csv", dtype=str)
+            self.assertEqual(len(original), 2)
+            self.assertEqual(set(original.sample_id), {"1", "2"})
+            excluded = pd.read_csv(output / "excluded_samples.csv", dtype=str)
+            self.assertEqual(len(excluded), 1)
+            self.assertEqual(excluded.iloc[0].sample_id, "1")
+            self.assertEqual(excluded.iloc[0].exclusion_reason, config["sample_exclusions"]["1"])
+            matrix = pd.read_csv(output / "background_corrected.csv", index_col=0)
+            self.assertEqual(matrix.shape, (1, 37))
+            self.assertEqual(set(map(str, matrix.index)), {"2"})
+            provenance = json.loads((output / "provenance.json").read_text())
+            self.assertEqual({r["sample_id"] for r in provenance["sample_exclusions"]}, {"1"})
+            self.assertEqual(len(provenance["inputs"]), 3)
+            html = (output / "report.html").read_text()
+            self.assertIn("Explicit sample exclusions", html)
+            self.assertIn("Synthetic test: confirmed bead loss", html)
+            self.assertIn("not represented by fabricated zeros", html)
+
     def test_missing_blank_rejected_before_output_is_created(self):
         with self.altered() as (fixture, output):
             controls = pd.read_csv(fixture / "controls.csv", dtype=str)

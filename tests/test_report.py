@@ -293,6 +293,82 @@ class ReportTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "snapshot disagree on biological_group"):
                 render_report(root)
 
+    def test_setup_only_baseline_keeps_limitation_in_titles_and_interpretation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_run(root)
+            self._write_annotations(root)
+            path = root / "measurements_long.csv"
+            frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+            frame["background_mode"] = "setup_baseline"
+            frame["background_reference_id"] = "setup"
+            frame["background_limitation"] = "setup_baseline_only_reagent_background_unmeasured"
+            frame["qc_flags"] = "setup_baseline_only"
+            frame["detection_state"] = np.where(frame.corrected_apc.astype(float) < 0,
+                                                  "below_setup_baseline", "above_setup_baseline")
+            frame.to_csv(path, index=False)
+            original = path.read_bytes()
+            provenance_path = root / "provenance.json"
+            provenance = json.loads(provenance_path.read_text())
+            provenance["background"] = {"mode": "setup_baseline", "rationale": "Setup only <script>reason</script>"}
+            provenance_path.write_text(json.dumps(provenance))
+            html = render_report(root).read_text()
+            self.assertIn("SETUP-BEAD BASELINE ONLY", html)
+            self.assertIn("Setup-baseline-subtracted APC", html)
+            self.assertIn("detection-reagent background is unmeasured", html)
+            self.assertIn("Optional tetraspanin normalization does not remove", html)
+            self.assertIn("does not establish detection or nondetection", html)
+            self.assertIn("&lt;script&gt;reason&lt;/script&gt;", html)
+            self.assertNotIn("Negative corrected values are labeled not detected", html)
+            self.assertNotIn("<h3>Background-corrected APC</h3>", html)
+            self.assertNotIn("single capture marker with signed background-corrected APC", html)
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_background_mode_conflicts_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_run(root)
+            path = root / "measurements_long.csv"
+            frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+            frame["background_mode"] = "setup_baseline"
+            frame.to_csv(path, index=False)
+            provenance_path = root / "provenance.json"
+            provenance = json.loads(provenance_path.read_text())
+            provenance["background"] = {"mode": "assay_blank"}
+            provenance_path.write_text(json.dumps(provenance))
+            with self.assertRaisesRegex(ValueError, "disagree on background mode"):
+                render_report(root)
+
+    def test_explicit_exclusions_are_separate_escaped_audit_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_run(root)
+            path = root / "measurements_long.csv"
+            frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+            frame = frame[frame.sample_id != "2"]
+            frame.to_csv(path, index=False)
+            original = path.read_bytes()
+            pd.DataFrame([{"sample_id": "2", "acquisition_id": "a2", "subject_id": "donor_2",
+                           "exclusion_reason": "Bead loss <script>reason</script>"}]).to_csv(
+                root / "excluded_samples.csv", index=False)
+            html = render_report(root).read_text()
+            self.assertIn("Explicit sample exclusions", html)
+            self.assertIn("1 excluded sample IDs; 1 excluded acquisition records", html)
+            self.assertIn("Bead loss &lt;script&gt;reason&lt;/script&gt;", html)
+            self.assertIn("not represented by fabricated zeros", html)
+            self.assertIn('href="excluded_samples.csv"', html)
+            self.assertIn("1 sample IDs; 1 acquisitions; 1 donor/subject IDs", html)
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_excluded_samples_cannot_remain_in_measurement_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_run(root)
+            pd.DataFrame([{"sample_id": "2", "exclusion_reason": "Bead loss"}]).to_csv(
+                root / "excluded_samples.csv", index=False)
+            with self.assertRaisesRegex(ValueError, "Excluded sample IDs remain"):
+                render_report(root)
+
 
 if __name__ == "__main__":
     unittest.main()

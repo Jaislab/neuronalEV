@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from copy import deepcopy
 import hashlib
 import json
 import math
@@ -30,6 +31,7 @@ RESERVED_COLUMNS = {
     "bead_id", "marker", "role", "n_events", "raw_median_apc", "measurement_valid", "qc_flags",
     "blank_median_apc", "corrected_apc", "detection_state", "correction_status", "normalization_factor",
     "normalized_apc", "normalization_status",
+    "background_mode", "background_reference_id", "background_limitation",
     "biological_group", "association_tags", "gene_or_epitope", "interpretation_note",
     "annotation_source_ids", "annotation_version",
 }
@@ -41,6 +43,7 @@ CONTROL_TYPES = {
     "setup_beads", "assay_blank", "reference_sample", "process_blank",
     "compensation_control", "unstained_control", "instrument_qc",
 }
+BACKGROUND_MODES = {"assay_blank", "setup_baseline"}
 _PLACEHOLDER_VALUES = {"unknown", "pending", "not_applicable"}
 
 
@@ -86,6 +89,66 @@ def _validate_normalization(normalization: dict) -> None:
         )
 
 
+def _validate_background(background: dict) -> str:
+    """Require an explicit rationale for the limited setup-bead baseline mode."""
+    if not isinstance(background, dict):
+        raise ConfigurationError("background must be an object")
+    mode = background.get("mode", "assay_blank")
+    if not isinstance(mode, str) or mode not in BACKGROUND_MODES:
+        raise ConfigurationError("background.mode must be assay_blank or setup_baseline")
+    rationale = background.get("rationale", "")
+    if not isinstance(rationale, str):
+        raise ConfigurationError("background.rationale must be a string")
+    if mode == "setup_baseline" and not rationale.strip():
+        raise ConfigurationError(
+            "background.rationale must be nonempty for setup_baseline; "
+            "setup beads do not measure detection-reagent background"
+        )
+    return mode
+
+
+def _validate_sample_exclusions(exclusions: dict) -> None:
+    """Require explicit sample IDs and reviewable reasons, never truthy flags."""
+    if not isinstance(exclusions, dict):
+        raise ConfigurationError("sample_exclusions must be an object mapping sample_id to a reason")
+    for sample_id, reason in exclusions.items():
+        if not isinstance(sample_id, str) or not sample_id.strip():
+            raise ConfigurationError("sample_exclusions keys must be nonempty sample_id strings")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ConfigurationError(
+                f"sample_exclusions reason for {sample_id!r} must be a nonempty string"
+            )
+
+
+def select_samples(config: dict, samples: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split manifest acquisitions into active and explicitly excluded samples.
+
+    Exclusion IDs must exist in the manifest and apply to *all* acquisitions of
+    that biological sample. Returned rows are independent copies in original
+    manifest order. Excluded rows carry the exact documented reason; neither
+    config nor original manifest rows are changed. A study cannot proceed with
+    no active samples.
+    """
+    exclusions = config.get("sample_exclusions", {})
+    _validate_sample_exclusions(exclusions)
+    unknown = set(exclusions) - {row["sample_id"] for row in samples}
+    if unknown:
+        raise ConfigurationError(
+            "sample_exclusions contains unknown sample_id values: " + ", ".join(sorted(unknown))
+        )
+    active, excluded = [], []
+    for original in samples:
+        row = deepcopy(original)
+        if row["sample_id"] in exclusions:
+            row["exclusion_reason"] = exclusions[row["sample_id"]]
+            excluded.append(row)
+        else:
+            active.append(row)
+    if not active:
+        raise ConfigurationError("No active samples remain after applying sample_exclusions")
+    return active, excluded
+
+
 def _documented(value: object) -> bool:
     return (
         isinstance(value, str)
@@ -121,6 +184,8 @@ def load_config(path: str | Path) -> dict:
     if not isinstance(config.get("setups"), dict) or not config["setups"]:
         raise ConfigurationError("Define at least one acquisition setup")
     _validate_normalization(config.get("normalization", {}))
+    _validate_background(config.get("background", {}))
+    _validate_sample_exclusions(config.get("sample_exclusions", {}))
     for key, setup in config["setups"].items():
         if not isinstance(key, str) or not key.strip() or not isinstance(setup, dict):
             raise ConfigurationError(f"Setup {key} must be an object")
@@ -203,6 +268,8 @@ def load_inputs(config: dict) -> tuple[list[dict], list[dict], pd.DataFrame]:
 
 def readiness_errors(config: dict, samples: list[dict], controls: list[dict]) -> list[str]:
     errors = []
+    background_mode = _validate_background(config.get("background", {}))
+    reference_type = "setup_beads" if background_mode == "setup_baseline" else "assay_blank"
     donors_by_sample = {}
     for row in samples:
         sample_id, subject_id = row.get("sample_id"), row.get("subject_id")
@@ -243,7 +310,7 @@ def readiness_errors(config: dict, samples: list[dict], controls: list[dict]) ->
             if kind == "sample":
                 if not _documented(row.get("subject_id")):
                     errors.append(f"{prefix}: subject_id required to preserve donor identity")
-                for field, expected_type in (("blank_id", "assay_blank"), ("setup_control_id", "setup_beads")):
+                for field, expected_type in (("blank_id", reference_type), ("setup_control_id", "setup_beads")):
                     ref = row.get(field)
                     control = by_id.get(ref)
                     if control is None or control.get("control_type") != expected_type:

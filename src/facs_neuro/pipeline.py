@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from . import __version__
-from .config import ConfigurationError, load_config, load_inputs, readiness_errors, file_hash
+from .config import ConfigurationError, load_config, load_inputs, readiness_errors, file_hash, select_samples
 from .fcs import read_fcs
 from .gating import gate_events, prepare_events, summarize, transform
 from .identity import audit_identity, write_identity_reference
@@ -35,7 +35,8 @@ def new_output(path: str | Path) -> Path:
 
 def inspect(config_path: str | Path) -> dict:
     config = load_config(config_path)
-    samples, controls, panel = load_inputs(config)
+    all_samples, controls, panel = load_inputs(config)
+    samples, excluded = select_samples(config, all_samples)
     errors = readiness_errors(config, samples, controls)
     inventory = []
     for row in samples + controls:
@@ -53,7 +54,13 @@ def inspect(config_path: str | Path) -> dict:
         inventory.append(entry)
     # Gate review is separate from file/metadata readiness.
     gate_ready = all(s.get("reviewed") is True for s in config["setups"].values())
+    exclusions = [{"sample_id": r["sample_id"], "acquisition_id": r["acquisition_id"],
+                   "exclusion_reason": r["exclusion_reason"]} for r in excluded]
+    inventory.extend({"id": r["acquisition_id"], "path": r["_file"], "excluded": True,
+                      "exclusion_reason": r["exclusion_reason"]} for r in excluded)
     return {"dataset_kind": config["dataset_kind"], "acquisitions": len(samples),
+            "input_acquisitions": len(all_samples), "excluded_acquisitions": len(excluded),
+            "sample_exclusions": exclusions,
             "donors": len({r.get('subject_id') for r in samples if r.get('subject_id')}),
             "capture_markers": int((panel.role == "capture_marker").sum()),
             "isotype_controls": int((panel.role == "isotype_control").sum()), "inputs_ready": not errors,
@@ -203,12 +210,17 @@ def _instrument_signature(data, setup: dict) -> tuple:
 
 def analyze(config_path: str | Path, output: str | Path) -> Path:
     config = load_config(config_path)
-    samples, controls, panel = load_inputs(config)
+    all_samples, controls, panel = load_inputs(config)
+    samples, excluded = select_samples(config, all_samples)
     errors = readiness_errors(config, samples, controls)
     if errors:
         raise ConfigurationError("Inputs are incomplete:\n" + "\n".join(errors[:30]) +
                                  (f"\n... {len(errors) - 30} additional issues; run inspect" if len(errors) > 30 else ""))
     normal = config.get("normalization", {})
+    background = config.get("background", {})
+    background_mode = background.get("mode", "assay_blank")
+    background_control_type = "setup_beads" if background_mode == "setup_baseline" else "assay_blank"
+    background_ids = {r["blank_id"] for r in samples}
     enabled = normal.get("enabled", False)
     if not isinstance(enabled, bool):
         raise ConfigurationError("normalization.enabled must be true or false")
@@ -237,6 +249,13 @@ def analyze(config_path: str | Path, output: str | Path) -> Path:
         "source_hashes": {p.name: file_hash(p) for p in sorted(Path(__file__).parent.glob("*.py"))},
         "inputs": [], "gate_versions": {k: v.get("gate_version") for k, v in config["setups"].items()},
         "statistics": "Descriptive per-acquisition summaries; no group tests or automatic technical-replicate aggregation",
+        "background": {
+            "mode": background_mode,
+            "rationale": background.get("rationale", ""),
+            "limitation": "setup_baseline_only_reagent_background_unmeasured" if background_mode == "setup_baseline" else "",
+        },
+        "sample_exclusions": [{"sample_id": r["sample_id"], "acquisition_id": r["acquisition_id"],
+                               "exclusion_reason": r["exclusion_reason"]} for r in excluded],
     }
     tables, blank_tables, control_tables, qc, identity_audits = [], [], [], [], []
     signatures, hashes = {}, {}
@@ -244,6 +263,11 @@ def analyze(config_path: str | Path, output: str | Path) -> Path:
         for k in ("samples", "controls", "panel"):
             shutil.copyfile(config[k], out / f"{k}_input.csv")
         shutil.copyfile(config["_path"], out / "analysis_input.json")
+        excluded_records = [{k: v for k, v in r.items() if not k.startswith("_")} for r in excluded]
+        if excluded_records:
+            pd.DataFrame(excluded_records).to_csv(out / "excluded_samples.csv", index=False)
+        else:
+            pd.DataFrame(columns=["sample_id", "acquisition_id", "exclusion_reason"]).to_csv(out / "excluded_samples.csv", index=False)
         write_identity_reference(out, panel)
         load_annotations().to_csv(out / "marker_annotations.csv", index=False)
         save_json(out / "marker_annotation_sources.json", load_sources())
@@ -291,12 +315,13 @@ def analyze(config_path: str | Path, output: str | Path) -> Path:
                             "Do not relabel ambiguous clusters by guesswork.")
                 if row["control_type"] == "setup_beads" and not table.measurement_valid.all():
                     raise ConfigurationError(f"Setup reference {rid} failed population QC; review gates and acquisition")
-                if row["control_type"] == "assay_blank":
+                if row["control_type"] == background_control_type and rid in background_ids:
                     blank_tables.append(table)
             else:
                 tables.append(table)
         measured = quantify(pd.concat(tables, ignore_index=True), pd.concat(blank_tables, ignore_index=True),
-                            normalizers=tuple(markers), min_normalization_factor=float(floor or 0), normalize=enabled)
+                            normalizers=tuple(markers), min_normalization_factor=float(floor or 0), normalize=enabled,
+                            background_mode=background_mode)
         measured = annotate_measurements(measured)
         measured.to_csv(out / "measurements_long.csv", index=False)
         pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")} for r in samples]).to_csv(out / "sample_metadata.csv", index=False)
