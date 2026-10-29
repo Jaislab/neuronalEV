@@ -17,6 +17,10 @@ Each acquired sample row requires:
 
 Controls require unique `control_id`, `control_type`, `fcs_path`, batch, setup, instrument-settings ID and kit lot. Assay blanks additionally require the same detection reagent and incubation protocol as their sample. Setup/blank references cannot cross incompatible batches, settings or kit lots. No implicit pooling of replicate blanks occurs: each sample selects one file. Preserve replicate blanks as separate controls; pooling/background-uncertainty models need an explicit later implementation.
 
+Accepted control types are `setup_beads`, `assay_blank`, `reference_sample`, `process_blank`, `compensation_control`, `unstained_control`, and `instrument_qc`. Unknown spellings are rejected even for unused controls. All files in the analysis manifest are processed with the configured bead-gating setup; separate non-assay instrument controls can instead be retained outside that manifest as acquisition evidence.
+
+Readiness checks reject inconsistent donor IDs for repeated acquisitions of the same sample. A supplied normalization floor must be numeric, finite and nonnegative even when normalization is disabled; `null` remains valid for a disabled normalization template. Invalid or missing calibration-reference files and unresolved compensation settings are checked before a calibration output directory is created. Unexpected failures after writing begins retain `failure.json`.
+
 Keep groups empty until known. Record ExoQuick variant/lot, original plasma and resuspension volumes, assay dilution/input and units, anticoagulant, enrichment batch, pre-clearing, storage/freeze–thaw and other preanalytical notes. No automatic protein/volume normalization is performed. `affinity_target` is `not_applicable` for the stated ExoQuick-only preparation; any future affinity-blocked tetraspanin must be excluded from the fixed normalizer set before comparisons.
 
 Computed-field names such as `bead_id`, `marker`, `raw_median_apc`, `measurement_valid` and `qc_flags` are reserved and cannot appear in manifests. Keep marker aliases in the panel's `alias` column. All 39 canonical bead/marker identities and isotype roles are checked; the pipeline cannot be silently repurposed for another panel.
@@ -30,6 +34,8 @@ The `setups` keys are setup IDs used in manifests. Each setup specifies distinct
 ```
 
 These names are examples. The instrument model alone does not determine installed lasers/filters, voltages or names. Within a setup, the pipeline compares available range, voltage, amplification/gain, filter/laser, instrument identity and embedded spillover metadata. When metadata are absent, the supplied setup/settings IDs and acquisition review remain essential; the software cannot reconstruct missing settings.
+
+The comparison covers FITC, PE and APC plus every scatter/time parameter used by a pre-gate, including pulse geometry. Changes to FSC/SSC settings therefore require a separately reviewed setup just as fluorescence-setting changes do. The strict reader rejects ambiguous TEXT keywords caused by unsupported empty vendor values instead of silently losing optional voltage or compensation metadata. Escaped delimiters inside ordinary TEXT values remain supported.
 
 Compensation examples (the matrix below illustrates the **format**, not an instrument calibration):
 

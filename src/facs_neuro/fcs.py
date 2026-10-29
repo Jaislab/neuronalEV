@@ -8,6 +8,8 @@ measurement scale. Compensation status cannot be inferred by this reader.
 
 Nonzero amplification decades ($PnE), nonunit gain ($PnG), supplemental TEXT,
 multi-dataset files, nonfinite events, and inconsistent offsets fail explicitly.
+Empty vendor TEXT values can be ambiguous with escaped delimiters; ambiguous
+keywords containing the TEXT delimiter are rejected rather than repaired.
 This intentionally avoids guessing physical scaling, repairing malformed files,
 or silently applying a compensation matrix. Actual instrument exports still need
 comparison with the acquisition software before assay use. No display transform
@@ -81,6 +83,12 @@ def _parse_text(segment: bytes) -> dict[str, str]:
         raise FCSFormatError("TEXT contains incomplete keyword/value pairs")
     metadata: dict[str, str] = {}
     for key, value in zip(tokens[::2], tokens[1::2]):
+        if delimiter in key:
+            raise FCSFormatError(
+                "Ambiguous TEXT keyword contains the TEXT delimiter; empty vendor "
+                "values or escaped delimiters in keywords are unsupported. "
+                "Re-export the file with unambiguous, nonempty TEXT values."
+            )
         key = key.strip().lstrip("$").lower()
         if not key:
             raise FCSFormatError("TEXT contains an empty keyword")

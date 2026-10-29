@@ -10,7 +10,7 @@ The [biological annotation guide](docs/marker-annotations.md) now defines neuron
 
 ## Use the installed environment
 
-From `/workspace/neuronalEV`:
+From the repository root:
 
 ```bash
 .venv/bin/facs-neuro --help
@@ -95,3 +95,12 @@ MPLCONFIGDIR=/tmp/facs-neuro-mpl XDG_CACHE_HOME=/tmp/facs-neuro-cache .venv/bin/
 ```
 
 The tests exercise FCS encoding/offsets/scaling rejection, compensation, gated population identity and ambiguity, signed correction, blank matching, normalization failures, donor/acquisition identity, report safety, and the FCS-to-CSV/report workflow. The synthetic demo verifies software behavior; it does not validate real sample preparation, detector settings, reference gates or biological findings.
+
+Development linting and CI use `requirements-dev.lock`:
+
+```bash
+.venv/bin/python -m pip install -r requirements-dev.lock
+.venv/bin/ruff check .
+```
+
+GitHub Actions is configured to run lint, the test suite, a synthetic CLI smoke test and a wheel build on Python 3.12 and 3.13. A local pass does not establish the result of a remote Actions run. No project license has been selected; adding one requires the repository owner's choice.

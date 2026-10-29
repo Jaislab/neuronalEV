@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -36,6 +37,61 @@ MATCH_FIELDS = (
     "batch_id", "setup_id", "instrument_settings_id", "kit_lot",
     "detection_reagent", "incubation_protocol",
 )
+CONTROL_TYPES = {
+    "setup_beads", "assay_blank", "reference_sample", "process_blank",
+    "compensation_control", "unstained_control", "instrument_qc",
+}
+_PLACEHOLDER_VALUES = {"unknown", "pending", "not_applicable"}
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    """Reject JavaScript numeric constants that are not valid finite JSON data."""
+    raise ValueError(f"Non-finite JSON constant {value!r} is not allowed")
+
+
+def _validate_normalization(normalization: dict) -> None:
+    """Validate supplied normalization settings even when the feature is off."""
+    if not isinstance(normalization, dict):
+        raise ConfigurationError("normalization must be an object")
+    enabled = normalization.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ConfigurationError("normalization.enabled must be true or false")
+    floor = normalization.get("minimum_factor")
+    if floor is None:
+        if enabled:
+            raise ConfigurationError(
+                "normalization.minimum_factor is required when normalization is enabled"
+            )
+    else:
+        numeric = isinstance(floor, (int, float)) and not isinstance(floor, bool)
+        try:
+            finite = numeric and math.isfinite(floor)
+        except OverflowError:
+            finite = False
+        if not finite or floor < 0:
+            raise ConfigurationError(
+                "normalization.minimum_factor must be a finite nonnegative number, "
+                "not a boolean or string"
+            )
+    markers = normalization.get("markers", ["CD9", "CD63", "CD81"])
+    if (
+        not isinstance(markers, list)
+        or not markers
+        or any(not isinstance(marker, str) for marker in markers)
+        or len(set(markers)) != len(markers)
+        or not set(markers) <= {"CD9", "CD63", "CD81"}
+    ):
+        raise ConfigurationError(
+            "normalization.markers must be a nonempty unique list drawn from CD9, CD63 and CD81"
+        )
+
+
+def _documented(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and value.strip().lower() not in _PLACEHOLDER_VALUES
+    )
 
 
 def file_hash(path: Path) -> str:
@@ -49,7 +105,9 @@ def file_hash(path: Path) -> str:
 def load_config(path: str | Path) -> dict:
     path = Path(path).resolve()
     try:
-        config = json.loads(path.read_text(), parse_constant=lambda x: (_ for _ in ()).throw(ValueError(x)))
+        config = json.loads(
+            path.read_text(), parse_constant=_reject_nonfinite_json_constant
+        )
     except (OSError, ValueError) as exc:
         raise ConfigurationError(f"Cannot read configuration {path}: {exc}") from exc
     if not isinstance(config, dict) or config.get("schema_version") != 1:
@@ -62,8 +120,7 @@ def load_config(path: str | Path) -> dict:
         config[key] = str((path.parent / config[key]).resolve())
     if not isinstance(config.get("setups"), dict) or not config["setups"]:
         raise ConfigurationError("Define at least one acquisition setup")
-    if not isinstance(config.get("normalization", {}), dict):
-        raise ConfigurationError("normalization must be an object")
+    _validate_normalization(config.get("normalization", {}))
     for key, setup in config["setups"].items():
         if not isinstance(key, str) or not key.strip() or not isinstance(setup, dict):
             raise ConfigurationError(f"Setup {key} must be an object")
@@ -146,12 +203,28 @@ def load_inputs(config: dict) -> tuple[list[dict], list[dict], pd.DataFrame]:
 
 def readiness_errors(config: dict, samples: list[dict], controls: list[dict]) -> list[str]:
     errors = []
+    donors_by_sample = {}
+    for row in samples:
+        sample_id, subject_id = row.get("sample_id"), row.get("subject_id")
+        if sample_id and _documented(subject_id):
+            donors_by_sample.setdefault(sample_id, set()).add(subject_id)
+    for sample_id, subjects in donors_by_sample.items():
+        if len(subjects) > 1:
+            errors.append(
+                f"sample {sample_id!r}: sample_id maps to multiple subject_id values "
+                f"across acquisitions ({', '.join(sorted(subjects))})"
+            )
     by_id = {c["control_id"]: c for c in controls}
     files = {}
     for kind, rows in (("sample", samples), ("control", controls)):
         for row in rows:
             rid = row["acquisition_id"] if kind == "sample" else row["control_id"]
             prefix = f"{kind} {rid}"
+            if kind == "control" and row.get("control_type") not in CONTROL_TYPES:
+                errors.append(
+                    f"{prefix}: unknown control_type {row.get('control_type')!r}; "
+                    f"expected one of {', '.join(sorted(CONTROL_TYPES))}"
+                )
             fpath = row["_file"]
             if not fpath or not Path(fpath).is_file():
                 errors.append(f"{prefix}: FCS file missing ({row['fcs_path'] or 'path not supplied'})")
@@ -165,10 +238,10 @@ def readiness_errors(config: dict, samples: list[dict], controls: list[dict]) ->
                 "batch_id", "setup_id", "instrument_settings_id", "kit_lot",
             )
             for field in keys:
-                if not row.get(field) or row[field].lower() in {"unknown", "pending", "not_applicable"}:
+                if not _documented(row.get(field)):
                     errors.append(f"{prefix}: {field} must be documented")
             if kind == "sample":
-                if not row.get("subject_id") or row["subject_id"].lower() in {"unknown", "pending", "not_applicable"}:
+                if not _documented(row.get("subject_id")):
                     errors.append(f"{prefix}: subject_id required to preserve donor identity")
                 for field, expected_type in (("blank_id", "assay_blank"), ("setup_control_id", "setup_beads")):
                     ref = row.get(field)

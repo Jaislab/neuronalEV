@@ -40,6 +40,15 @@ class PipelineIntegrationTests(unittest.TestCase):
             shutil.copytree(self.fixture, fixture)
             yield fixture, root / "results"
 
+    def shifted_fcs(self, fixture: Path, filename: str, *, shift: float = 0.25) -> Path:
+        """Write a distinct acquisition with unchanged bead/scatter identities."""
+        source = read_fcs(fixture / "fcs" / "1.fcs")
+        events = source.events.copy()
+        events[:, source.channels.index("APC-A")] += shift
+        destination = fixture / "fcs" / filename
+        write_fcs(destination, events, label="SYNTHETIC-" + filename)
+        return destination
+
     def test_two_donor_analysis_preserves_identity_signed_values_and_counts(self):
         measurements = pd.read_csv(self.results / "measurements_long.csv",
                                    dtype={"sample_id": str, "subject_id": str,
@@ -172,6 +181,40 @@ class PipelineIntegrationTests(unittest.TestCase):
                 analyze(fixture / "analysis.json", output)
             self.assertFalse(output.exists())
 
+    def test_conflicting_donor_identity_is_rejected_before_output(self):
+        with self.altered() as (fixture, output):
+            samples = pd.read_csv(fixture / "samples.csv", dtype=str, keep_default_na=False)
+            # Two distinct acquisition IDs/files now claim the same sample but
+            # retain conflicting subject IDs. The defect must fail preflight.
+            samples.loc[1, "sample_id"] = samples.loc[0, "sample_id"]
+            samples.to_csv(fixture / "samples.csv", index=False)
+            with self.assertRaisesRegex(ValueError, r"(?i)(donor|subject)"):
+                analyze(fixture / "analysis.json", output)
+            self.assertFalse(output.exists())
+
+    def test_disabled_normalization_still_rejects_nonnumeric_floor_before_output(self):
+        with self.altered() as (fixture, output):
+            path = fixture / "analysis.json"
+            config = json.loads(path.read_text())
+            config["normalization"] = {"enabled": False, "minimum_factor": "not-a-number"}
+            path.write_text(json.dumps(config))
+            with self.assertRaisesRegex(ValueError, r"(?i)(minimum_factor|normaliz)"):
+                analyze(path, output)
+            self.assertFalse(output.exists())
+
+    def test_unused_unknown_control_type_is_rejected_before_output(self):
+        with self.altered() as (fixture, output):
+            self.shifted_fcs(fixture, "unused-typo.fcs", shift=0.125)
+            controls = pd.read_csv(fixture / "controls.csv", dtype=str, keep_default_na=False)
+            extra = controls.loc[controls.control_type == "assay_blank"].copy()
+            extra["control_id"] = "unused-typo"
+            extra["control_type"] = "assay blank"
+            extra["fcs_path"] = "fcs/unused-typo.fcs"
+            pd.concat([controls, extra], ignore_index=True).to_csv(fixture / "controls.csv", index=False)
+            with self.assertRaisesRegex(ValueError, r"(?i)(control.type|control type)"):
+                analyze(fixture / "analysis.json", output)
+            self.assertFalse(output.exists())
+
     def test_manifest_metadata_cannot_override_computed_measurements(self):
         for filename, column, value in (("samples.csv", "raw_median_apc", "0"),
                                          ("samples.csv", "corrected_apc", "100000"),
@@ -242,6 +285,30 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertEqual(sum(reference.role == "isotype_control"), 2)
             self.assertTrue((output / "bead-identity-reference.png").is_file())
 
+    def test_calibration_missing_reference_fails_before_output(self):
+        with self.altered() as (fixture, output):
+            (fixture / "fcs" / "setup.fcs").unlink()
+            with self.assertRaisesRegex((ValueError, OSError), r"(?i)(reference|setup|file|missing)"):
+                calibrate(fixture / "analysis.json", output)
+            self.assertFalse(output.exists())
+
+    def test_calibration_malformed_reference_fails_before_output(self):
+        with self.altered() as (fixture, output):
+            (fixture / "fcs" / "setup.fcs").write_bytes(b"not an FCS file")
+            with self.assertRaisesRegex(ValueError, r"(?i)(fcs|header|short|unsupported|format|offset)"):
+                calibrate(fixture / "analysis.json", output)
+            self.assertFalse(output.exists())
+
+    def test_calibration_unknown_compensation_fails_before_output(self):
+        with self.altered() as (fixture, output):
+            path = fixture / "analysis.json"
+            config = json.loads(path.read_text())
+            config["setups"]["synthetic_setup"]["compensation"]["mode"] = "unknown"
+            path.write_text(json.dumps(config))
+            with self.assertRaisesRegex(ValueError, r"(?i)compensat"):
+                calibrate(path, output)
+            self.assertFalse(output.exists())
+
     def test_unreviewed_gates_cannot_generate_a_completed_report(self):
         with self.altered() as (fixture, output):
             path = fixture / "analysis.json"
@@ -267,12 +334,28 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertEqual(json.loads((output / "provenance.json").read_text())["status"], "incomplete")
             self.assertFalse((output / "report.html").exists())
 
+    def test_scatter_voltage_drift_requires_separate_setup(self):
+        for parameter, channel in ((4, "FSC-A"), (5, "SSC-A")):
+            with self.subTest(channel=channel):
+                with self.altered() as (fixture, output):
+                    path = fixture / "fcs" / "1.fcs"
+                    content = path.read_bytes()
+                    # Replacing an optional unit gain with a voltage retains
+                    # exact TEXT/DATA offsets and valid unity-gain event values.
+                    token = f"$P{parameter}G|1|".encode()
+                    replacement = f"$P{parameter}V|7|".encode()
+                    self.assertIn(token, content)
+                    path.write_bytes(content.replace(token, replacement, 1))
+                    parsed = read_fcs(path)
+                    self.assertEqual(parsed.metadata[f"p{parameter}v"], "7")
+                    with self.assertRaisesRegex(ValueError, r"(?i)metadata.*(differ|chang)"):
+                        analyze(fixture / "analysis.json", output)
+                    self.assertEqual(json.loads((output / "provenance.json").read_text())["status"], "incomplete")
+                    self.assertFalse((output / "report.html").exists())
+
     def test_technical_acquisition_keeps_same_donor_identity(self):
-        with self.altered() as (fixture, _):
-            source = read_fcs(fixture / "fcs" / "1.fcs")
-            events = source.events.copy()
-            events[:, source.channels.index("APC-A")] += 0.25
-            write_fcs(fixture / "fcs" / "1-tech.fcs", events, label="SYNTHETIC-TECHNICAL-ACQUISITION")
+        with self.altered() as (fixture, output):
+            self.shifted_fcs(fixture, "1-tech.fcs", shift=0.25)
             samples = pd.read_csv(fixture / "samples.csv", dtype=str, keep_default_na=False)
             technical = samples.iloc[[0]].copy()
             technical["acquisition_id"] = "1-tech"
@@ -282,6 +365,54 @@ class PipelineIntegrationTests(unittest.TestCase):
             self.assertTrue(inventory["inputs_ready"])
             self.assertEqual(inventory["acquisitions"], 3)
             self.assertEqual(inventory["donors"], 2)
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()) as stderr:
+                code = main(["analyze", "--config", str(fixture / "analysis.json"), "--output", str(output)])
+            self.assertEqual(code, 0, stderr.getvalue())
+            measured = pd.read_csv(output / "measurements_long.csv", dtype={
+                "sample_id": str, "acquisition_id": str, "subject_id": str, "bead_id": str,
+            })
+            self.assertEqual(len(measured), 117)
+            self.assertEqual(measured.acquisition_id.nunique(), 3)
+            self.assertEqual(measured.sample_id.nunique(), 2)
+            self.assertEqual(measured.subject_id.nunique(), 2)
+            donor_one = measured[measured.subject_id == "1"]
+            self.assertEqual(set(donor_one.acquisition_id), {"1", "1-tech"})
+            self.assertTrue(measured.groupby("acquisition_id").size().eq(39).all())
+            self.assertTrue(measured.n_events.eq(80).all())
+            cd9 = measured[measured.bead_id == "66"].set_index("acquisition_id")
+            self.assertAlmostEqual(cd9.loc["1-tech", "raw_median_apc"] - cd9.loc["1", "raw_median_apc"],
+                                   0.25, places=4)
+            for filename in ("raw_median_apc.csv", "background_corrected.csv", "normalized.csv"):
+                matrix = pd.read_csv(output / filename, index_col=0)
+                self.assertEqual(matrix.shape, (3, 37))
+                self.assertEqual(set(map(str, matrix.index)), {"1", "2", "1-tech"})
+            original = (output / "measurements_long.csv").read_bytes()
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()) as stderr:
+                code = main(["report", "--run", str(output)])
+            self.assertEqual(code, 0, stderr.getvalue())
+            self.assertEqual((output / "measurements_long.csv").read_bytes(), original)
+            html = (output / "report.html").read_text()
+            self.assertIn("2 sample IDs; 3 acquisitions; 2 donor/subject IDs", html)
+            self.assertIn("SYNTHETIC DATA", html)
+
+    def test_cli_one_donor_demo_and_report_happy_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "demo"
+            with redirect_stdout(StringIO()) as stdout, redirect_stderr(StringIO()) as stderr:
+                code = main(["demo", "--output", str(output), "--donors", "1"])
+            self.assertEqual(code, 0, stderr.getvalue())
+            self.assertIn("SYNTHETIC SOFTWARE DEMO", stdout.getvalue())
+            results = output / "results"
+            frame = pd.read_csv(results / "measurements_long.csv")
+            self.assertEqual(len(frame), 39)
+            self.assertEqual(frame.sample_id.nunique(), 1)
+            provenance = json.loads((results / "provenance.json").read_text())
+            self.assertEqual(provenance["status"], "completed")
+            self.assertEqual(provenance["validation_status"], "synthetic_only")
+            with redirect_stdout(StringIO()), redirect_stderr(StringIO()) as stderr:
+                code = main(["report", "--run", str(results)])
+            self.assertEqual(code, 0, stderr.getvalue())
+            self.assertIn("SYNTHETIC DATA", (results / "report.html").read_text())
 
     def test_existing_result_directory_is_preserved(self):
         original = (self.results / "report.html").read_bytes()

@@ -12,7 +12,7 @@ from facs_neuro.fcs import FCSFormatError, read_fcs
 
 
 def encode_fcs(events, *, datatype="F", endian="<", widths=None,
-               changes=None, text_offsets=False, version=b"FCS3.1"):
+               changes=None, text_offsets=False, version=b"FCS3.1", delimiter="|"):
     """Construct fixtures from the FCS HEADER/TEXT/DATA specification directly."""
     events = np.asarray(events)
     if events.ndim != 2:
@@ -34,8 +34,6 @@ def encode_fcs(events, *, datatype="F", endian="<", widths=None,
             fields.pop(key, None)
         else:
             fields[key] = str(value)
-    delimiter = "|"
-
     def text_bytes():
         components = [part.replace(delimiter, delimiter * 2)
                       for pair in fields.items() for part in pair]
@@ -102,6 +100,31 @@ class FCSReaderTests(unittest.TestCase):
                                      changes={"$P1N": "APC|A", "COMMENT": "one|two|"}))
         self.assertEqual(actual.channels, ("APC|A",))
         self.assertEqual(actual.metadata["comment"], "one|two|")
+
+    def test_empty_optional_vendor_values_do_not_silently_merge_keywords(self):
+        for keyword in ["$CELLS", "$P1V", "$SPILLOVER"]:
+            for delimiter in ["|", "!"]:
+                with self.subTest(keyword=keyword, delimiter=delimiter):
+                    # This otherwise valid FCS file has all required metadata.
+                    # The adjacent separators in e.g. |$CELLS||$CYT| must not
+                    # consume CYT into a bogus 'cells|$cyt' keyword silently.
+                    payload = encode_fcs(
+                        [[1, 2]], changes={keyword: "", "$CYT": "LSRFortessa"},
+                        delimiter=delimiter,
+                    )
+                    with self.assertRaisesRegex(FCSFormatError, "empty vendor values"):
+                        self.read(payload)
+
+    def test_escaped_delimiters_remain_supported_in_values(self):
+        for delimiter in ["|", "!"]:
+            with self.subTest(delimiter=delimiter):
+                expected = f"human{delimiter}plasma{delimiter}"
+                actual = self.read(encode_fcs(
+                    [[1]], changes={"$CELLS": expected, "$CYT": "LSRFortessa"},
+                    delimiter=delimiter,
+                ))
+                self.assertEqual(actual.metadata["cells"], expected)
+                self.assertEqual(actual.metadata["cyt"], "LSRFortessa")
 
     def test_mixed_integer_widths_and_byte_orders(self):
         for endian in ["<", ">"]:
