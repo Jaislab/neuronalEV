@@ -128,6 +128,46 @@ class ReportTests(unittest.TestCase):
                 render_report(root)
             self.assertEqual(existing.read_text(), "existing report must be preserved")
 
+    def test_optional_identity_audit_and_schematic_are_embedded_with_caveats(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_run(root)
+            audit = pd.DataFrame([{
+                "record_id": "setup<script>", "setup_id": "fortessa", "bead_id": "22",
+                "marker": "ErbB-2", "role": "capture_marker", "figure2_fitc_level": 2,
+                "figure2_pe_level": 2, "n_events": 128, "observed_fitc_median": 1500,
+                "observed_pe_median": 2500, "layout_status": "inconsistent",
+                "layout_flags": "flag <img src=x onerror=alert(1)>",
+            }])
+            audit.to_csv(root / "bead_identity_audit.csv", index=False)
+            audit[["bead_id", "marker", "figure2_fitc_level", "figure2_pe_level"]].to_csv(
+                root / "bead-identity-reference.csv", index=False)
+            from matplotlib.figure import Figure
+            figure = Figure(figsize=(2, 1))
+            figure.subplots().text(.1, .5, "Ordinal schematic")
+            figure.savefig(root / "bead-identity-reference.png")
+            html = render_report(root).read_text()
+            self.assertIn("Figure 2 ordinal bead identity reference", html)
+            self.assertIn("1 setup-control population records; 1 have inconsistent or missing", html)
+            self.assertIn("relative-order audit does not prove true bead identity", html)
+            self.assertIn("Manual reference validation", html)
+            self.assertIn("not fluorescence coordinates or calibrated gate boundaries", html)
+            self.assertIn("5,000 total bead events", html)
+            self.assertIn("128 per population only if evenly distributed", html)
+            self.assertIn("No fixed count cutoff", html)
+            self.assertIn('href="bead_identity_audit.csv"', html)
+            self.assertIn('href="bead-identity-reference.csv"', html)
+            self.assertIn("setup&lt;script&gt;", html)
+            self.assertNotIn("<script>", html)
+
+    def test_identity_audit_missing_schema_is_not_presented_as_valid(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_run(root)
+            pd.DataFrame({"bead_id": ["22"]}).to_csv(root / "bead_identity_audit.csv", index=False)
+            with self.assertRaisesRegex(ValueError, "Bead identity audit missing columns"):
+                render_report(root)
+
 
 if __name__ == "__main__":
     unittest.main()

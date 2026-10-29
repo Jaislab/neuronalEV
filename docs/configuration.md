@@ -2,6 +2,8 @@
 
 `config/analysis.json` contains paths relative to itself. FCS paths inside a manifest are relative to that manifest. Unknown real-experiment values are intentionally not filled.
 
+Sample FCS, assay-blank FCS and the kit's setup-bead FCS are the required input types. Gate definitions are established from the setup-bead events during analysis; you do not need a separate provider gate file. The [Figure 2/Table 1 guide](bead-identification.md) explains the 39 assignments and the setup-reference ordering audit. Relative order is checked using observed FITC/PE medians; schematic ordinal levels are never used as numeric gate coordinates.
+
 ## Manifest keys
 
 Each acquired sample row requires:

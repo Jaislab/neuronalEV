@@ -17,7 +17,7 @@ from facs_neuro.cli import main
 from facs_neuro.config import ConfigurationError, file_hash
 from facs_neuro.demo import generate_demo, write_fcs
 from facs_neuro.fcs import read_fcs
-from facs_neuro.pipeline import analyze, inspect
+from facs_neuro.pipeline import analyze, calibrate, inspect
 
 
 class PipelineIntegrationTests(unittest.TestCase):
@@ -84,6 +84,11 @@ class PipelineIntegrationTests(unittest.TestCase):
         for entry in provenance["inputs"]:
             self.assertEqual(entry["sha256"], file_hash(Path(entry["path"])))
         self.assertEqual(len(list((self.results / "diagnostics").glob("*.png"))), 4)
+        audit = pd.read_csv(self.results / "bead_identity_audit.csv", dtype={"bead_id": str})
+        self.assertEqual(len(audit), 39)
+        self.assertEqual(set(audit.record_id), {"setup"})
+        self.assertEqual(set(audit.layout_status), {"consistent"})
+        self.assertTrue((self.results / "bead-identity-reference.png").is_file())
         self.assertIn("SYNTHETIC DATA", (self.results / "report.html").read_text())
         self.assertFalse((self.results / "failure.json").exists())
 
@@ -131,6 +136,48 @@ class PipelineIntegrationTests(unittest.TestCase):
             with self.assertRaisesRegex(ConfigurationError, "bead identity mismatch"):
                 analyze(fixture / "analysis.json", output)
             self.assertFalse(output.exists())
+
+    def test_populations_with_swapped_gate_positions_fail_figure2_audit(self):
+        with self.altered() as (fixture, output):
+            path = fixture / "analysis.json"
+            config = json.loads(path.read_text())
+            populations = {row["bead_id"]: row for row in config["setups"]["synthetic_setup"]["populations"]}
+            # Labels remain canonical, and every population still has 80 events.
+            # Swapping the actual gates must be caught independently of counts.
+            populations["22"]["vertices"], populations["32"]["vertices"] = (
+                populations["32"]["vertices"], populations["22"]["vertices"])
+            path.write_text(json.dumps(config))
+            with self.assertRaisesRegex(ConfigurationError, "Figure 2"):
+                analyze(path, output)
+            self.assertTrue((output / "failure.json").is_file())
+            self.assertEqual(json.loads((output / "provenance.json").read_text())["status"], "incomplete")
+            self.assertFalse((output / "report.html").exists())
+            audit = pd.read_csv(output / "bead_identity_audit.csv", dtype={"bead_id": str})
+            bad_ids = set(audit.loc[audit.layout_status != "consistent", "bead_id"])
+            self.assertTrue({"22", "32"}.issubset(bad_ids))
+            self.assertTrue(audit.n_events.eq(80).all())
+
+    def test_calibration_outputs_unreviewed_gates_and_ordinal_reference(self):
+        with self.altered() as (fixture, output):
+            calibrate(fixture / "analysis.json", output)
+            templates = json.loads((output / "gate-templates.json").read_text())
+            setup = templates["synthetic_setup"]
+            self.assertFalse(setup["reviewed"])
+            self.assertEqual(setup["gate_version"], "")
+            self.assertEqual(len(setup["populations"]), 39)
+            self.assertTrue(all(population["vertices"] == [] for population in setup["populations"]))
+            reference = pd.read_csv(output / "bead-identity-reference.csv", dtype={"bead_id": str})
+            self.assertEqual(len(reference), 39)
+            self.assertEqual(set(reference.bead_id), {p["bead_id"] for p in setup["populations"]})
+            expected = reference.set_index("bead_id")
+            self.assertEqual(expected.loc["22", "figure2_pe_level"], expected.loc["32", "figure2_pe_level"])
+            self.assertLess(expected.loc["22", "figure2_fitc_level"], expected.loc["32", "figure2_fitc_level"])
+            self.assertEqual(expected.loc["22", "figure2_fitc_level"], expected.loc["23", "figure2_fitc_level"])
+            self.assertLess(expected.loc["22", "figure2_pe_level"], expected.loc["23", "figure2_pe_level"])
+            self.assertEqual(expected.loc["22", "marker"], "ErbB-2")
+            self.assertEqual(expected.loc["32", "marker"], "CD171")
+            self.assertEqual(sum(reference.role == "isotype_control"), 2)
+            self.assertTrue((output / "bead-identity-reference.png").is_file())
 
     def test_unreviewed_gates_cannot_generate_a_completed_report(self):
         with self.altered() as (fixture, output):

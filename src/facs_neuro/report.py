@@ -114,6 +114,48 @@ def _heatmap(frame: pd.DataFrame, value: str, title: str) -> str:
             f"src=\"{_figure_data_url(figure)}\"><p class=\"caption\">{caption}</p>")
 
 
+def _identity_section(root: Path) -> str:
+    """Show reference evidence without treating a relative-order check as identity proof."""
+    sections = [
+        "<h2>Bead identity reference and setup-control audit</h2>",
+        "<p>The manufacturer's Figure 2 assigns 39 bead IDs by their relative FITC/PE layout. "
+        "The schematic uses ordinal levels, not fluorescence coordinates or calibrated gate boundaries. "
+        "Compare it with the measured setup-control diagnostics. Manual reference validation of the "
+        "derived bead identities and gate placement uses that setup-control data: a consistent relative-order audit does not "
+        "prove true bead identity.</p>",
+    ]
+    reference = root / "bead-identity-reference.png"
+    if reference.is_file():
+        encoded = base64.b64encode(reference.read_bytes()).decode("ascii")
+        sections.append(
+            '<img alt="Figure 2 ordinal bead identity reference, not fluorescence gate coordinates" '
+            f'src="data:image/png;base64,{encoded}">'
+        )
+    audit_path = root / "bead_identity_audit.csv"
+    if audit_path.is_file():
+        try:
+            audit = pd.read_csv(audit_path, dtype=str, keep_default_na=False)
+        except (OSError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+            raise ValueError(f"Cannot read bead_identity_audit.csv: {exc}") from exc
+        needed = {"bead_id", "marker", "figure2_fitc_level", "figure2_pe_level", "n_events",
+                  "observed_fitc_median", "observed_pe_median", "layout_status", "layout_flags"}
+        missing = sorted(needed.difference(audit.columns))
+        if missing:
+            raise ValueError("Bead identity audit missing columns: " + ", ".join(missing))
+        unexpected = set(audit["layout_status"]) - {"consistent", "inconsistent", "missing"}
+        if unexpected:
+            raise ValueError("Bead identity audit has unsupported layout_status values")
+        flagged = int((audit["layout_status"] != "consistent").sum())
+        sections.append(
+            f"<p>{len(audit)} setup-control population records; {flagged} have inconsistent or missing "
+            "relative-layout evidence. This check evaluates relative-order plausibility only.</p>"
+        )
+        sections.append(_table(audit))
+    else:
+        sections.append("<p>No setup-control relative-order audit was supplied for this run.</p>")
+    return "\n".join(sections)
+
+
 def render_report(run_dir: Path | str) -> Path:
     """Render a run's CSV/JSON results to a standalone ``report.html``.
 
@@ -187,7 +229,15 @@ def render_report(run_dir: Path | str) -> Path:
         ("corrected_apc", "Background-corrected APC"),
         ("normalized_apc", "Optional tetraspanin-normalized signal"),
     ))
+    pieces.append(_identity_section(root))
     pieces.append("<h2>Quality control</h2>")
+    pieces.append(
+        "<p>An acquisition target of 5,000 total bead events per sample is distributed across all 39 "
+        "populations: about 128 per population only if evenly distributed, before filtering losses. "
+        "Actual accepted counts are recorded per population in n_events and through the gate stages. "
+        "The total does not guarantee sufficient counts in every population. No fixed count cutoff "
+        "is inferred from that target; use documented, pilot-defined QC thresholds.</p>"
+    )
     pieces.append(_table(pd.DataFrame(qc)) if qc else "<p>No acquisition-level QC records were supplied.</p>")
     flags = frame.get("qc_flags", pd.Series("", index=frame.index)).fillna("").astype(str)
     invalid = (frame["measurement_valid"].str.lower().isin({"false", "0"})
@@ -219,7 +269,8 @@ def render_report(run_dir: Path | str) -> Path:
     pieces.append("<h2>Numerical outputs</h2><p>Signal values in CSV files remain on the analysis scale. "
                   "These download links require the run folder alongside the standalone report.</p><ul>")
     for name in ("measurements_long.csv", "raw_median_apc.csv", "background_corrected.csv",
-                 "normalized.csv", "isotype_controls.csv", "qc.csv", "sample_metadata.csv"):
+                 "normalized.csv", "isotype_controls.csv", "qc.csv", "sample_metadata.csv",
+                 "bead_identity_audit.csv", "bead-identity-reference.csv"):
         if (root / name).is_file():
             pieces.append(f"<li><a href=\"{escape(name, quote=True)}\">{escape(name)}</a></li>")
     pieces.append("</ul><h2>Run provenance</h2><pre>")

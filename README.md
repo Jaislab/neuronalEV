@@ -4,6 +4,8 @@ A reproducible command-line pipeline for the planned **24 independent human dono
 
 FITC/PE identify 39 capture-bead populations. APC supplies one median signal per population: **37 marker measurements and two isotype controls per acquisition**. Bead counts are measurement counts, not additional biological replicates. No patient FCS files have been supplied; real-file compatibility, gate identity and assay performance remain unvalidated.
 
+The input types are sample FCS files, a matched assay-blank FCS and the kit's setup-bead FCS. Gate definitions are derived and checked from that setup file; no separate provider gate/workspace file is required. See the [Figure 2/Table 1 identity guide](docs/bead-identification.md) for the complete 39-population layout and interpretation of 5,000 total beads per sample. Setup reference processing checks observed FITC/PE ordering, catching inconsistent placement before sample APC summaries.
+
 ## Use the installed environment
 
 From `/workspace/neuronalEV`:
@@ -63,6 +65,7 @@ The second command refreshes the HTML for a completed run. Failed runs retain `f
 - `measurements_long.csv`: per-acquisition/per-bead counts, raw median APC, matched blank median, signed correction, normalization and explicit QC states.
 - `raw_median_apc.csv`, `background_corrected.csv`, `normalized.csv`: 37-marker matrices, indexed by acquisition ID. Raw medians are retained for audit even when QC-invalid; consult validity flags. Invalid corrected/normalized measurements are empty cells, never biological zeros.
 - `control_measurements.csv`, `isotype_controls.csv`, `qc.csv`, `qc.json`: measurement/control evidence, counts through pre-gates, missing/ambiguous populations and saturation.
+- `bead-identity-reference.png`, `bead-identity-reference.csv`, `bead_identity_audit.csv`: schematic Figure 2/Table 1 guide and observed setup-bead ordering/count evidence. The reference contains ordinal positions, not fluorescence coordinates; consistent order does not itself certify correct identity.
 - `sample_metadata.csv`, original input manifests/config, `provenance.json`: donor/acquisition mapping, hashes, versions and processing status.
 - `report.html`, `diagnostics/`: self-contained descriptive report and individual diagnostic PNGs.
 

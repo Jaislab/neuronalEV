@@ -16,6 +16,7 @@ from . import __version__
 from .config import ConfigurationError, load_config, load_inputs, readiness_errors, file_hash
 from .fcs import read_fcs
 from .gating import gate_events, prepare_events, summarize, transform
+from .identity import audit_identity, write_identity_reference
 from .quantify import quantify
 
 
@@ -126,6 +127,7 @@ def calibrate(config_path: str | Path, output: str | Path) -> Path:
     if not references:
         raise ConfigurationError("Add setup_beads controls before preparing gate overviews")
     out = new_output(output)
+    write_identity_reference(out, panel)
     templates = {}
     for index, row in enumerate(references):
         if row.get("setup_id") not in config["setups"] or not row["_file"]:
@@ -142,7 +144,11 @@ def calibrate(config_path: str | Path, output: str | Path) -> Path:
         "These overviews and empty polygons are NOT calibrated gates. Review scatter, singlets, "
         "the manufacturer's bead identity map, compensation and the chosen transform/cofactor. "
         "Fill polygons and pilot-derived QC thresholds; copy the reviewed setup into your config. "
-        "Do not mark reviewed until all bead identities have been checked.\n")
+        "Use bead-identity-reference.png/csv to check the Figure 2 layout and Table 1 names. "
+        "These reference levels are ordinal, not Fortessa fluorescence coordinates. "
+        "The sample FCS, assay-blank FCS and setup-bead FCS are the required input types; "
+        "a separate supplier gate/workspace file is not required. Derived gates must be "
+        "checked against the setup-bead data before being marked reviewed.\n")
     return out
 
 
@@ -204,12 +210,13 @@ def analyze(config_path: str | Path, output: str | Path) -> Path:
         "inputs": [], "gate_versions": {k: v.get("gate_version") for k, v in config["setups"].items()},
         "statistics": "Descriptive per-acquisition summaries; no group tests or automatic technical-replicate aggregation",
     }
-    tables, blank_tables, control_tables, qc = [], [], [], []
+    tables, blank_tables, control_tables, qc, identity_audits = [], [], [], [], []
     signatures, hashes = {}, {}
     try:
         for k in ("samples", "controls", "panel"):
             shutil.copyfile(config[k], out / f"{k}_input.csv")
         shutil.copyfile(config["_path"], out / "analysis_input.json")
+        write_identity_reference(out, panel)
         # Reference controls are validated first. Failed recognition blocks analysis.
         ordered = [(False, r) for r in sorted(controls, key=lambda c: c["control_type"] != "setup_beads")]
         ordered += [(True, r) for r in samples]
@@ -236,6 +243,17 @@ def analyze(config_path: str | Path, output: str | Path) -> Path:
             diagnostic_plot(data, setup, panel, out / "diagnostics" / f"{index + 1:03d}.png", reviewed=True)
             if not is_sample:
                 control_tables.append(table)
+                if row["control_type"] == "setup_beads":
+                    audit = audit_identity(data, setup, panel)
+                    audit["record_id"] = rid
+                    audit["setup_id"] = row["setup_id"]
+                    identity_audits.append(audit)
+                    pd.concat(identity_audits, ignore_index=True).to_csv(out / "bead_identity_audit.csv", index=False)
+                    if not audit.layout_status.eq("consistent").all():
+                        raise ConfigurationError(
+                            f"Setup reference {rid} disagrees with Figure 2 FITC/PE ordering or has missing populations; "
+                            "check axis mapping, gate IDs, compensation and bead_identity_audit.csv. "
+                            "Do not relabel ambiguous clusters by guesswork.")
                 if row["control_type"] == "setup_beads" and not table.measurement_valid.all():
                     raise ConfigurationError(f"Setup reference {rid} failed population QC; review gates and acquisition")
                 if row["control_type"] == "assay_blank":
