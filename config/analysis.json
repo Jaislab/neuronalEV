@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "dataset_kind": "experimental",
+  "samples": "../metadata/samples.csv",
+  "controls": "../metadata/controls.csv",
+  "panel": "panel.csv",
+  "normalization": {
+    "enabled": false,
+    "markers": ["CD9", "CD63", "CD81"],
+    "minimum_factor": null
+  },
+  "setups": {
+    "fortessa_run1": {
+      "reviewed": false,
+      "gate_version": "",
+      "review_note": "",
+      "channels": {"fitc": "FITC-A", "pe": "PE-A", "apc": "APC-A"},
+      "compensation": {
+        "input_state": "unknown",
+        "mode": "none",
+        "reason": ""
+      },
+      "bead_space": {
+        "x_transform": {"kind": "asinh", "cofactor": 150.0},
+        "y_transform": {"kind": "asinh", "cofactor": 150.0}
+      },
+      "pre_gates": [],
+      "populations": [],
+      "min_events_per_population": null
+    }
+  }
+}

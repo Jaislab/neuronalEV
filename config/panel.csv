@@ -1,0 +1,40 @@
+bead_id,marker,alias,role,normalizer_candidate,source
+22,ErbB-2,CD340,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+23,CD49a,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+24,CD140a,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+32,CD171,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+33,CD56,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+34,CD13,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+35,CD31,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+42,CD222,IGF2R,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+43,CD11b,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+44,CD24,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+45,CD45,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+46,CD133/1,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+52,O4,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+53,GLAST,ACSA-1,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+54,CD90,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+55,CX3CR1,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+56,EGFR,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+57,Podoplanin,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+63,A2B5,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+64,CD29,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+65,CSPG4,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+66,CD9,,capture_marker,yes,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+67,CD63,,capture_marker,yes,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+68,CD81,,capture_marker,yes,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+74,CD47,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+75,PSA-NCAM,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+76,CD44,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+77,CD38,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+78,CD49f,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+79,CD106,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+85,CD49e,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+86,CD54,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+87,CD36,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+88,CD107a,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+89,CD68,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+96,VGLUT2,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+97,REA control,,isotype_control,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+98,Ganglioside GD2,,capture_marker,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
+99,mIgG1 control,,isotype_control,no,MACSPlex EV Kit Neuro 140-006-716.02 Table 1 printed p.10
