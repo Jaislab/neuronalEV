@@ -24,7 +24,7 @@
     "fortessa_20261029": {
       "reviewed": true,
       "gate_version": "fortessa-20261029-v1",
-      "review_note": "Polygons derived by scripts/identify_setup_beads.py from 20261029_Beads_5000.fcs. Figure 2 order audit consistent for all 39 populations in the setup beads and in all 23 sample files, with zero ambiguous events. Software review only; expert visual confirmation of the overlays is still recommended. min_events_per_population=50 is a provisional choice, not a validated threshold.",
+      "review_note": "Polygons derived by scripts/identify_setup_beads.py from 20261029_Beads_5000.fcs. Figure 2 order audit consistent for all 39 populations in the setup beads and in all 23 sample files, with zero ambiguous events. Software review only; expert visual confirmation of the overlays is still recommended. min_events_per_population=30 (lowered from 50 on 2026-10-30 at the user's request) is a provisional choice, not a validated threshold.",
       "channels": {
         "fitc": "FITC-A",
         "pe": "PE-A",
@@ -93,7 +93,7 @@
           ]
         }
       ],
-      "min_events_per_population": 50,
+      "min_events_per_population": 30,
       "populations": [
         {
           "bead_id": "22",

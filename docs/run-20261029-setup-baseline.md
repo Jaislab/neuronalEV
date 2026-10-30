@@ -5,7 +5,7 @@ This records the first analysis of real donor files. The run had **no working as
 Reproduce with the FCS files in `data/raw/` (git-ignored):
 
 ```bash
-.venv/bin/facs-neuro analyze --config config/analysis.json --output results/run-20261029-setup-baseline-normalized
+.venv/bin/facs-neuro analyze --config config/analysis.json --output results/run-20261029-min30
 ```
 
 ## Inputs
@@ -17,18 +17,18 @@ Reproduce with the FCS files in `data/raw/` (git-ignored):
 | Reference | Setup beads, acquired 13:54 after the samples |
 | Instrument settings | Identical in all 24 files: FSC 150, SSC 120, FITC 280, PE 480, APC 520 V; FSC threshold 5000; identity spill matrix |
 | Normalization | Mean of baseline-subtracted CD9, CD63 and CD81 (datasheet section 4.1); minimum factor 500 |
-| Gates | `fortessa-20261029-v1`, derived from the setup beads; minimum 50 events per population (provisional) |
+| Gates | `fortessa-20261029-v1`, derived from the setup beads; minimum 30 events per population (provisional; lowered from 50 on 30 October 2026) |
 | Not recorded | Kit lot and incubation protocol; entered as `unrecorded_single_*_run_20261029` placeholders |
 
 ## Results
 
 - **Identity:** the Figure 2 order audit is consistent for all 39 populations in every sample, with no ambiguous events. The setup-bead gates transfer to the samples.
-- **Measurements:** 819 of 897 are valid. The run status is `completed_with_qc_failures`.
-- **Low bead counts:** samples 5, 22 and 20 lose 30, 20 and 9 populations below 50 events. These samples have many FSC-W doublets, consistent with EV-mediated bead crosslinking at high input (manual p.22); the manual recommends repeating with diluted EVs. Population 53 GLAST is under 50 events in ten further samples.
+- **Measurements:** 883 of 897 are valid. The run status is `completed_with_qc_failures`.
+- **Low bead counts:** eight populations fall below 30 events: GLAST in samples 5, 9, 14, 17, 20 and 22, CD81 in sample 5 and CD171 in sample 22. Samples 5, 20 and 22 have many FSC-W doublets, consistent with EV-mediated bead crosslinking at high input (manual p.22); the manual recommends repeating with diluted EVs. With the earlier minimum of 50 events, 78 measurements were invalid, 59 of them in these three samples.
 - **APC saturation:** samples 18 and 24 each have three populations with clipped APC events (18: CD29, CD9, CD36; 24: CD29, CD47, CD49f). These are invalid.
 - **High nonspecific signal:** in samples 3, 8, 11, 4 and 9 both isotype controls read 5,000 to 20,000 above baseline, close to the tetraspanin signal. Their marker values are inflated by nonspecific binding that a real assay blank would have measured. Compare them with other samples only with that caveat, or consider excluding them.
 - **Strongest signals overall:** CD36, CD9, CD81, CD63 and CD49f.
-- **Normalization:** 19 of 23 samples are normalized, with factors from 1,494 (sample 1) to 30,245 (sample 11). Samples 5, 18, 20 and 22 are not, because at least one tetraspanin is invalid (low bead count, or APC clipping of CD9 in sample 18); the method allows no fallback. Normalized values are reported alongside the baseline-subtracted ones, which are unchanged. With normalization on, the run counts 172 measurements as failed: the 78 invalid measurements plus every unnormalized row of the four samples above.
+- **Normalization:** 21 of 23 samples are normalized, with factors from 1,283 to 30,245. Samples 5 and 18 are not, because one tetraspanin is invalid (CD81 has 29 beads in sample 5; CD9 has clipped APC in sample 18); the method allows no fallback. Normalized values are reported alongside the baseline-subtracted ones. With normalization on, the run counts 87 measurements as failed: the 14 invalid measurements plus every unnormalized row of samples 5 and 18.
 - **Normalization and the high-isotype samples:** CD9 and CD63 are mouse IgG1 antibodies (Table 1), so in samples 3, 4, 8, 9 and 11 the factor includes nonspecific background. Their normalized values are shrunk and can look normal without the problem being fixed; keep them flagged.
 
 ## Recommendations
@@ -36,4 +36,4 @@ Reproduce with the FCS files in `data/raw/` (git-ignored):
 1. Include a buffer-only assay blank (beads plus detection reagent, no EVs) in the next run. It is the only control that measures reagent background.
 2. Repeat samples 5, 20 and 22 diluted.
 3. Record the kit lot and incubation protocol in `metadata/` so the placeholders can be replaced.
-4. Decide on a validated `min_events_per_population` and on whether to exclude the high-isotype samples.
+4. Validate the provisional `min_events_per_population` of 30, and decide whether to exclude the high-isotype samples.
