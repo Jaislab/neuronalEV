@@ -500,19 +500,31 @@ class PipelineIntegrationTests(unittest.TestCase):
             analyze(self.fixture / "analysis.json", self.results)
         self.assertEqual((self.results / "report.html").read_bytes(), original)
 
-    def test_real_template_inspection_reports_24_unready_donors(self):
-        real_config = Path(__file__).resolve().parents[1] / "config" / "analysis.json"
+    def test_real_20261029_configuration_inspects_consistently(self):
+        """The committed study config describes the 2026-10-29 run.
+
+        Raw FCS files are git-ignored, so readiness depends on whether they are
+        present locally; everything else is fixed by the committed config.
+        """
+        root = Path(__file__).resolve().parents[1]
+        real_config = root / "config" / "analysis.json"
         inventory = inspect(real_config)
         self.assertEqual(inventory["dataset_kind"], "experimental")
-        self.assertEqual(inventory["acquisitions"], 24)
-        self.assertEqual(inventory["donors"], 24)
+        self.assertEqual(inventory["input_acquisitions"], 24)
+        self.assertEqual(inventory["acquisitions"], 23)
+        self.assertEqual(inventory["donors"], 23)
+        self.assertEqual([e["sample_id"] for e in inventory["sample_exclusions"]], ["10"])
         self.assertEqual(inventory["capture_markers"], 37)
-        self.assertFalse(inventory["inputs_ready"])
-        self.assertFalse(inventory["gates_marked_reviewed"])
+        self.assertTrue(inventory["gates_marked_reviewed"])
+        files_present = all((root / "data" / "raw" / f"20261029_{i}.fcs").is_file()
+                            for i in [*range(1, 10), *range(11, 25), "Beads_5000"])
+        self.assertEqual(inventory["inputs_ready"], files_present)
+        if not files_present:
+            self.assertTrue(all("FCS file missing" in e for e in inventory["errors"]))
         with redirect_stdout(StringIO()) as stdout, redirect_stderr(StringIO()):
             code = main(["inspect", "--config", str(real_config)])
-        self.assertEqual(code, 2)
-        self.assertFalse(json.loads(stdout.getvalue())["inputs_ready"])
+        self.assertEqual(code, 0 if files_present else 2)
+        self.assertEqual(json.loads(stdout.getvalue())["inputs_ready"], files_present)
 
     def test_cli_refuses_report_for_incomplete_run(self):
         with tempfile.TemporaryDirectory() as directory:

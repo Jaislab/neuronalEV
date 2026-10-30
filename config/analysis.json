@@ -13,11 +13,18 @@
     ],
     "minimum_factor": null
   },
+  "background": {
+    "mode": "setup_baseline",
+    "rationale": "The 2026-10-29 run has no working assay blank. At the user's instruction the setup-bead acquisition (20261029_Beads_5000.fcs, same instrument settings, acquired 13:54 after the samples) is the per-bead baseline. Setup beads carry no detection reagent, so reagent-related nonspecific signal is not removed and no detection calls are made."
+  },
+  "sample_exclusions": {
+    "10": "No FCS file for sample 10 in the 2026-10-29 export archive"
+  },
   "setups": {
     "fortessa_20261029": {
-      "reviewed": false,
-      "gate_version": "",
-      "review_note": "",
+      "reviewed": true,
+      "gate_version": "fortessa-20261029-v1",
+      "review_note": "Polygons derived by scripts/identify_setup_beads.py from 20261029_Beads_5000.fcs. Figure 2 order audit consistent for all 39 populations in the setup beads and in all 23 sample files, with zero ambiguous events. Software review only; expert visual confirmation of the overlays is still recommended. min_events_per_population=50 is a provisional choice, not a validated threshold.",
       "channels": {
         "fitc": "FITC-A",
         "pe": "PE-A",
@@ -86,7 +93,7 @@
           ]
         }
       ],
-      "min_events_per_population": null,
+      "min_events_per_population": 50,
       "populations": [
         {
           "bead_id": "22",
