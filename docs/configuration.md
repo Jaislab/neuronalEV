@@ -62,7 +62,7 @@ Each gate uses vertices in its declared coordinate space:
 }
 ```
 
-Empty vertices intentionally cannot analyze data. Draw real polygons from reviewed controls. Add a distinct `singlets` pre-gate using FSC-A vs FSC-H/FSC-W or the analogous SSC pulse pair. Gates run sequentially in listed order; additional time/scatter polygons are allowed. Pre-gate axis names must be conventional FSC/SSC/Time. Missing pulse geometry needs another validated acquisition/export, rather than a fabricated singlet gate.
+Empty vertices intentionally cannot analyze data. Draw real polygons from reviewed controls, or start from the unreviewed template that `scripts/identify_setup_beads.py` derives from a setup-bead export (its `derived_from` entry records the source file hash and is informational). Add a distinct `singlets` pre-gate using FSC-A vs FSC-H/FSC-W or the analogous SSC pulse pair. Gates run sequentially in listed order; additional time/scatter polygons are allowed. Pre-gate axis names must be conventional FSC/SSC/Time. Missing pulse geometry needs another validated acquisition/export, rather than a fabricated singlet gate.
 
 `bead_space` specifies the transforms for population gates (`x_transform` for FITC, `y_transform` for PE). Supported forms are `{"kind":"linear"}` and `{"kind":"asinh","cofactor":150}`; **150 is an illustrative value, not a validated setting**. Draw all population coordinates after the chosen transform. Population objects have `bead_id` and polygon `vertices`; IDs determine biological labels regardless of list order. Do not transfer gate coordinates across different units, transforms, gains or instruments without validating them.
 
