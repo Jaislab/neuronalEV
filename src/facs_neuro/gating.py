@@ -32,7 +32,12 @@ def transform(values, spec=None):
         return values.copy()
     if kind == "asinh":
         cofactor = spec.get("cofactor")
-        if isinstance(cofactor, bool) or not isinstance(cofactor, (float, int)) or not np.isfinite(cofactor) or cofactor <= 0:
+        if (
+            isinstance(cofactor, bool)
+            or not isinstance(cofactor, (float, int))
+            or not np.isfinite(cofactor)
+            or cofactor <= 0
+        ):
             raise GateError("asinh transforms require a finite positive cofactor")
         return np.arcsinh(values / cofactor)
     raise GateError(f"Unsupported transform kind: {kind!r}")
@@ -44,15 +49,30 @@ def _orientation(a, b, c):
 
 
 def _on_segment(a, b, c, tolerance):
-    return abs(_orientation(a, b, c)) <= tolerance and np.all(c >= np.minimum(a, b) - tolerance) and np.all(c <= np.maximum(a, b) + tolerance)
+    return (
+        abs(_orientation(a, b, c)) <= tolerance
+        and np.all(c >= np.minimum(a, b) - tolerance)
+        and np.all(c <= np.maximum(a, b) + tolerance)
+    )
 
 
 def _segments_intersect(a, b, c, d, tolerance):
     o1, o2 = _orientation(a, b, c), _orientation(a, b, d)
     o3, o4 = _orientation(c, d, a), _orientation(c, d, b)
-    if ((o1 > tolerance and o2 < -tolerance) or (o1 < -tolerance and o2 > tolerance)) and ((o3 > tolerance and o4 < -tolerance) or (o3 < -tolerance and o4 > tolerance)):
+    if (
+        (o1 > tolerance and o2 < -tolerance)
+        or (o1 < -tolerance and o2 > tolerance)
+    ) and (
+        (o3 > tolerance and o4 < -tolerance)
+        or (o3 < -tolerance and o4 > tolerance)
+    ):
         return True
-    return (_on_segment(a, b, c, tolerance) or _on_segment(a, b, d, tolerance) or _on_segment(c, d, a, tolerance) or _on_segment(c, d, b, tolerance))
+    return (
+        _on_segment(a, b, c, tolerance)
+        or _on_segment(a, b, d, tolerance)
+        or _on_segment(c, d, a, tolerance)
+        or _on_segment(c, d, b, tolerance)
+    )
 
 
 def validate_polygon(vertices):
@@ -69,7 +89,10 @@ def validate_polygon(vertices):
         raise GateError("A polygon needs at least three distinct vertices")
     scale = max(1.0, float(np.ptp(polygon, axis=0).max()))
     tolerance = np.finfo(float).eps * scale * scale * 32
-    area = float(np.sum(polygon[:, 0] * np.roll(polygon[:, 1], -1) - polygon[:, 1] * np.roll(polygon[:, 0], -1)))
+    area = float(np.sum(
+        polygon[:, 0] * np.roll(polygon[:, 1], -1)
+        - polygon[:, 1] * np.roll(polygon[:, 0], -1)
+    ))
     if abs(area) <= tolerance:
         raise GateError("Polygon has zero or numerically degenerate area")
     n = len(polygon)
@@ -77,7 +100,10 @@ def validate_polygon(vertices):
         for j in range(i + 1, n):
             if j == i + 1 or (i == 0 and j == n - 1):
                 continue
-            if _segments_intersect(polygon[i], polygon[(i + 1) % n], polygon[j], polygon[(j + 1) % n], tolerance):
+            if _segments_intersect(
+                polygon[i], polygon[(i + 1) % n],
+                polygon[j], polygon[(j + 1) % n], tolerance,
+            ):
                 raise GateError("Self-intersecting polygons are not supported")
     return polygon
 
@@ -96,7 +122,13 @@ def polygon_mask(points, vertices):
     for a, b in zip(polygon, np.roll(polygon, -1, axis=0)):
         delta = b - a
         cross = delta[0] * (y - a[1]) - delta[1] * (x - a[0])
-        boundary |= (np.abs(cross) <= tolerance) & (x >= min(a[0], b[0]) - tolerance) & (x <= max(a[0], b[0]) + tolerance) & (y >= min(a[1], b[1]) - tolerance) & (y <= max(a[1], b[1]) + tolerance)
+        boundary |= (
+            (np.abs(cross) <= tolerance)
+            & (x >= min(a[0], b[0]) - tolerance)
+            & (x <= max(a[0], b[0]) + tolerance)
+            & (y >= min(a[1], b[1]) - tolerance)
+            & (y <= max(a[1], b[1]) + tolerance)
+        )
         crossing = (a[1] > y) != (b[1] > y)
         if delta[1] != 0:
             x_intercept = a[0] + (y - a[1]) * delta[0] / delta[1]
@@ -176,14 +208,23 @@ def prepare_events(data, setup):
             matrix = np.asarray(policy.get("matrix", []), dtype=float)
         except (TypeError, ValueError) as exc:
             raise GateError("Compensation matrix must be numeric") from exc
-    if not isinstance(names, (list, tuple)) or not names or not all(isinstance(c, str) for c in names) or len(set(names)) != len(names):
+    if (
+        not isinstance(names, (list, tuple))
+        or not names
+        or not all(isinstance(c, str) for c in names)
+        or len(set(names)) != len(names)
+    ):
         raise GateError("Compensation matrix channels must be distinct names")
     if any(c not in indices for c in names):
         raise GateError("Compensation matrix references channels absent from FCS")
     if any(name.upper().startswith(("FSC-", "SSC-")) or name.upper() == "TIME" for name in names):
         raise GateError("Fluorescence compensation cannot modify scatter or Time channels")
     n = len(names)
-    if matrix.shape != (n, n) or not np.isfinite(matrix).all() or not np.allclose(np.diag(matrix), 1.0, atol=1e-8, rtol=0):
+    if (
+        matrix.shape != (n, n)
+        or not np.isfinite(matrix).all()
+        or not np.allclose(np.diag(matrix), 1.0, atol=1e-8, rtol=0)
+    ):
         raise GateError("Compensation requires a finite square spillover matrix with unit diagonal")
     if np.linalg.cond(matrix) > 1e10:
         raise GateError("Compensation matrix is singular or numerically unstable")
@@ -206,7 +247,10 @@ def gate_events(data, setup, panel, *, stages=None):
     the return value remains the same three-item tuple.
     """
     channels, indices = _required_channels(data, setup)
-    if setup.get("reviewed") is not True or any(not isinstance(setup.get(field), str) or not setup[field].strip() for field in ("gate_version", "review_note")):
+    if setup.get("reviewed") is not True or any(
+        not isinstance(setup.get(field), str) or not setup[field].strip()
+        for field in ("gate_version", "review_note")
+    ):
         raise GateError("A reviewed gate template with gate_version and review_note is required")
     if stages is not None and not isinstance(stages, list):
         raise GateError("stages must be a list when supplied")
@@ -236,9 +280,14 @@ def gate_events(data, setup, panel, *, stages=None):
         if any(name == channels["apc"] or "apc" in name.casefold() for name in names):
             raise GateError("APC detection signal cannot be used to select beads or singlets")
         conventional = [name.upper() for name in names]
-        if any(not (name.startswith("FSC-") or name.startswith("SSC-") or name == "TIME") for name in conventional):
+        if any(
+            not (name.startswith("FSC-") or name.startswith("SSC-") or name == "TIME")
+            for name in conventional
+        ):
             raise GateError("Pre-gate axes must use conventional FSC-*, SSC-* or Time names")
-        if gate["name"] == "beads" and {name.split("-", 1)[0] for name in conventional} != {"FSC", "SSC"}:
+        if gate["name"] == "beads" and {
+            name.split("-", 1)[0] for name in conventional
+        } != {"FSC", "SSC"}:
             raise GateError("The beads gate requires FSC versus SSC")
         if gate["name"] == "singlets":
             valid_pulses = any(
@@ -247,7 +296,10 @@ def gate_events(data, setup, panel, *, stages=None):
             )
             if not valid_pulses:
                 raise GateError("The singlets gate requires same-detector scatter area versus height or width")
-        points = np.column_stack([transform(values[:, indices[names[0]]], gate.get("x_transform")), transform(values[:, indices[names[1]]], gate.get("y_transform"))])
+        points = np.column_stack([
+            transform(values[:, indices[names[0]]], gate.get("x_transform")),
+            transform(values[:, indices[names[1]]], gate.get("y_transform")),
+        ])
         mask &= polygon_mask(points, gate.get("vertices", []))
         if stages is not None:
             stages.append({"gate": gate["name"], "events": int(mask.sum())})
@@ -265,8 +317,14 @@ def gate_events(data, setup, panel, *, stages=None):
     space = setup.get("bead_space", {})
     if not isinstance(space, dict):
         raise GateError("bead_space must be an object")
-    points = np.column_stack([transform(values[:, indices[channels["fitc"]]], space.get("x_transform")), transform(values[:, indices[channels["pe"]]], space.get("y_transform"))])
-    membership = {str(pop["bead_id"]): polygon_mask(points, pop.get("vertices", [])) & mask for pop in populations}
+    points = np.column_stack([
+        transform(values[:, indices[channels["fitc"]]], space.get("x_transform")),
+        transform(values[:, indices[channels["pe"]]], space.get("y_transform")),
+    ])
+    membership = {
+        str(pop["bead_id"]): polygon_mask(points, pop.get("vertices", [])) & mask
+        for pop in populations
+    }
     return values, mask, membership
 
 
@@ -279,7 +337,12 @@ def summarize(data, setup, panel):
     ambiguous = pregated & (counts > 1)
     threshold = setup.get("apc_saturation_threshold")
     if threshold is not None:
-        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not np.isfinite(threshold) or threshold <= 0:
+        if (
+            isinstance(threshold, bool)
+            or not isinstance(threshold, (int, float))
+            or not np.isfinite(threshold)
+            or threshold <= 0
+        ):
             raise GateError("apc_saturation_threshold must be finite and positive")
     else:
         upper = data.ranges.get(setup["channels"]["apc"])
@@ -313,6 +376,33 @@ def summarize(data, setup, panel):
             flags.append("ambiguous_population_events")
         if saturation_unverified:
             flags.append("acquisition_saturation_unverified")
-        rows.append({"bead_id": bead_id, "marker": pop["marker"], "role": pop["role"], "n_events": n, "raw_median_apc": float(np.median(values[selected, apc_index])) if n else np.nan, "measurement_valid": not flags, "qc_flags": ";".join(flags)})
-    qc = {"total_events": len(values), "pregated_events": int(pregated.sum()), "assigned_events": int((pregated & (counts == 1)).sum()), "ambiguous_events": int(ambiguous.sum()), "unassigned_events": int((pregated & (counts == 0)).sum()), "apc_saturated_events": int((pregated & saturated).sum()) if is_original else None, "apc_saturation_threshold": float(threshold) if is_original else None, "apc_saturation_source": "original_fcs" if is_original else "manual_acquisition_review" if manually_reviewed else "unverified", "acquisition_saturation_unverified": saturation_unverified, "gate_counts": stages}
+        rows.append({
+            "bead_id": bead_id,
+            "marker": pop["marker"],
+            "role": pop["role"],
+            "n_events": n,
+            "raw_median_apc": (
+                float(np.median(values[selected, apc_index])) if n else np.nan
+            ),
+            "measurement_valid": not flags,
+            "qc_flags": ";".join(flags),
+        })
+    qc = {
+        "total_events": len(values),
+        "pregated_events": int(pregated.sum()),
+        "assigned_events": int((pregated & (counts == 1)).sum()),
+        "ambiguous_events": int(ambiguous.sum()),
+        "unassigned_events": int((pregated & (counts == 0)).sum()),
+        "apc_saturated_events": (
+            int((pregated & saturated).sum()) if is_original else None
+        ),
+        "apc_saturation_threshold": float(threshold) if is_original else None,
+        "apc_saturation_source": (
+            "original_fcs" if is_original
+            else "manual_acquisition_review" if manually_reviewed
+            else "unverified"
+        ),
+        "acquisition_saturation_unverified": saturation_unverified,
+        "gate_counts": stages,
+    }
     return pd.DataFrame(rows), qc

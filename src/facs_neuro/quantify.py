@@ -3,7 +3,10 @@
 Inputs contain one *acquisition* per acquisition/control identifier and one row per
 bead population. Controls are matched by explicit ID; no controls, events, or
 biological replicates are implicitly pooled. This module does not establish a
-detection limit: a positive corrected value is labelled ``unclassified_positive``.
+detection limit: a positive assay-blank-corrected value is labelled
+``unclassified_positive``. Explicit setup-baseline subtraction is a limited
+alternative: it does not measure detection-reagent background and never makes
+detection/nondetection claims.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ _MEASUREMENT_FIELDS = {
 }
 _SAMPLE_FIELDS = _MEASUREMENT_FIELDS | {"sample_id", "subject_id", "blank_id"}
 _BLANK_FIELDS = _MEASUREMENT_FIELDS | {"control_id"}
+SETUP_BASELINE_LIMITATION = "setup_baseline_only_reagent_background_unmeasured"
 
 
 def _identifier(value: object) -> str:
@@ -84,8 +88,9 @@ def quantify(
     normalizers: tuple[str, ...] = ("CD9", "CD63", "CD81"),
     min_normalization_factor: float = 0.0,
     normalize: bool = False,
+    background_mode: str = "assay_blank",
 ) -> pd.DataFrame:
-    """Correct per-bead medians using exact, compatible assay-blank matches.
+    """Subtract exact, compatible per-bead reference medians.
 
     ``measurement_valid`` is an upstream gate/QC decision, not a truthy string.
     Counts must also be positive integers and medians finite. No count threshold
@@ -102,6 +107,12 @@ def quantify(
     must exceed the configured nonnegative floor. No per-sample marker fallback
     is used. Isotypes retain their role and may be corrected/normalized for
     diagnostics, but cannot be selected as normalizers.
+
+    The default ``assay_blank`` mode retains the original full-reagent-blank
+    semantics. Explicit ``setup_baseline`` mode requires setup-bead references,
+    records its limitation on every row (including normalized measurements),
+    and labels values only as below/at/above the setup baseline. It does not
+    establish positivity, LOD, or removal of nonspecific detection-reagent signal.
     """
     _require_columns(samples, _SAMPLE_FIELDS, "samples")
     acquisition_column = "acquisition_id" if "acquisition_id" in samples else "sample_id"
@@ -112,6 +123,8 @@ def quantify(
     for sample_id, group in samples.groupby(samples["sample_id"].map(_identifier), sort=False):
         if group["subject_id"].map(_identifier).nunique() > 1:
             raise ValueError(f"sample {sample_id!r} maps to multiple subject_id values")
+    if not isinstance(background_mode, str) or background_mode not in {"assay_blank", "setup_baseline"}:
+        raise ValueError("background_mode must be assay_blank or setup_baseline")
     if not isinstance(normalize, (bool, np.bool_)):
         raise ValueError("normalize must be a boolean")
     if isinstance(min_normalization_factor, (bool, np.bool_)):
@@ -133,6 +146,8 @@ def quantify(
     blank_lookup: dict[tuple[str, str], pd.Series] = {}
     if len(blanks):
         _require_columns(blanks, _BLANK_FIELDS, "blanks")
+        if background_mode == "setup_baseline" and "control_type" not in blanks:
+            raise ValueError("setup_baseline reference rows require control_type='setup_beads'")
         _validate_frame(blanks, "control_id", "blanks")
         blank_lookup = {
             (_identifier(row["control_id"]), _identifier(row["bead_id"])): row
@@ -142,6 +157,15 @@ def quantify(
     result = samples.copy(deep=True)
     if "qc_flags" not in result:
         result["qc_flags"] = ""
+    result["background_mode"] = background_mode
+    result["background_reference_id"] = result["blank_id"].copy()
+    result["background_limitation"] = (
+        SETUP_BASELINE_LIMITATION if background_mode == "setup_baseline" else ""
+    )
+    if background_mode == "setup_baseline":
+        result["qc_flags"] = result["qc_flags"].map(
+            lambda value: _join_flags(value, ["setup_baseline_only"])
+        )
     result["blank_median_apc"] = np.nan
     result["corrected_apc"] = np.nan
     result["correction_status"] = "unavailable"
@@ -164,9 +188,15 @@ def quantify(
             _identifier(sample["blank_id"]), _identifier(sample["bead_id"])
         ))
         if blank is None:
-            reasons.append("missing_assay_blank")
+            reasons.append(
+                "missing_setup_baseline" if background_mode == "setup_baseline" else "missing_assay_blank"
+            )
         else:
             blank_reasons = []
+            if "control_type" in blank.index:
+                expected_type = "setup_beads" if background_mode == "setup_baseline" else "assay_blank"
+                if _identifier(blank["control_type"]) != expected_type:
+                    blank_reasons.append("background_reference_type_mismatch")
             for column in ("batch_id", "setup_id", "marker", "role"):
                 if _identifier(sample[column]) != _identifier(blank[column]):
                     blank_reasons.append(f"blank_{column.removesuffix('_id')}_mismatch")
@@ -187,10 +217,17 @@ def quantify(
             continue
         put(position, "corrected_apc", corrected)
         put(position, "correction_status", "valid")
-        put(position, "detection_state", (
-            "not_detected" if corrected < 0 else
-            "at_background" if corrected == 0 else "unclassified_positive"
-        ))
+        if background_mode == "setup_baseline":
+            state = (
+                "below_setup_baseline" if corrected < 0 else
+                "at_setup_baseline" if corrected == 0 else "above_setup_baseline"
+            )
+        else:
+            state = (
+                "not_detected" if corrected < 0 else
+                "at_background" if corrected == 0 else "unclassified_positive"
+            )
+        put(position, "detection_state", state)
 
     if not normalize:
         return result

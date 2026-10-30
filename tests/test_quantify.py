@@ -187,6 +187,88 @@ class QuantificationTests(unittest.TestCase):
         result = quantify(samples, blanks, normalize=True)
         self.assertTrue(result["normalization_status"].eq("ambiguous_normalizer").all())
 
+    def test_default_background_semantics_are_preserved_and_provenance_is_explicit(self):
+        samples, blanks = make_inputs()
+        default = quantify(samples, blanks)
+        explicit = quantify(samples, blanks, background_mode="assay_blank")
+        assert_frame_equal(default, explicit)
+        self.assertTrue(default["background_mode"].eq("assay_blank").all())
+        self.assertTrue(default["background_reference_id"].eq("blank1").all())
+        self.assertTrue(default["background_limitation"].eq("").all())
+        self.assertFalse(default["qc_flags"].str.contains("setup_baseline_only").any())
+
+    def test_setup_baseline_preserves_signed_arithmetic_without_detection_claims(self):
+        samples, references = make_inputs()
+        references["control_type"] = "setup_beads"
+        before_samples, before_references = samples.copy(deep=True), references.copy(deep=True)
+        result = quantify(samples, references, background_mode="setup_baseline", normalize=True).set_index("marker")
+        self.assertEqual(result.loc["CD56", "corrected_apc"], -5)
+        self.assertEqual(result.loc["CD56", "detection_state"], "below_setup_baseline")
+        self.assertEqual(result.loc["REA control", "detection_state"], "at_setup_baseline")
+        self.assertEqual(result.loc["CD9", "detection_state"], "above_setup_baseline")
+        self.assertTrue(result["correction_status"].eq("valid").all())
+        self.assertTrue(result["background_mode"].eq("setup_baseline").all())
+        self.assertTrue(result["background_reference_id"].eq("blank1").all())
+        self.assertTrue(result["background_limitation"].eq("setup_baseline_only_reagent_background_unmeasured").all())
+        self.assertTrue(result["qc_flags"].eq("setup_baseline_only").all())
+        self.assertTrue(result["normalization_factor"].eq(20).all())
+        self.assertAlmostEqual(result.loc["CD56", "normalized_apc"], -0.25)
+        self.assertFalse(result["detection_state"].isin(["not_detected", "unclassified_positive", "at_background"]).any())
+        assert_frame_equal(samples, before_samples)
+        assert_frame_equal(references, before_references)
+
+    def test_setup_baseline_requires_explicit_source_type_and_rejects_wrong_references(self):
+        samples, references = make_inputs()
+        with self.assertRaisesRegex(ValueError, "require control_type='setup_beads'"):
+            quantify(samples, references, background_mode="setup_baseline")
+        for control_type in ("assay_blank", "process_blank", "", "unknown"):
+            with self.subTest(control_type=control_type):
+                references["control_type"] = control_type
+                result = quantify(samples, references, background_mode="setup_baseline")
+                self.assertTrue(result["corrected_apc"].isna().all())
+                self.assertTrue(result["correction_status"].eq("background_reference_type_mismatch").all())
+                self.assertTrue(result["detection_state"].eq("unavailable").all())
+
+    def test_full_blank_mode_checks_source_type_if_available(self):
+        samples, references = make_inputs()
+        references["control_type"] = "setup_beads"
+        result = quantify(samples, references)
+        self.assertTrue(result["corrected_apc"].isna().all())
+        self.assertTrue(result["correction_status"].eq("background_reference_type_mismatch").all())
+        references["control_type"] = "assay_blank"
+        self.assertTrue(quantify(samples, references)["correction_status"].eq("valid").all())
+
+    def test_baseline_missing_or_failed_measurements_stay_missing_with_limitation(self):
+        samples, references = make_inputs()
+        references["control_type"] = "setup_beads"
+        references.loc[0, ["measurement_valid", "n_events", "qc_flags"]] = [False, 12, "low_bead_count"]
+        result = quantify(samples, references, background_mode="setup_baseline", normalize=True)
+        self.assertTrue(np.isnan(result.loc[0, "corrected_apc"]))
+        self.assertEqual(result.loc[0, "correction_status"], "invalid_blank_measurement")
+        self.assertTrue(result["normalized_apc"].isna().all())
+        self.assertTrue(result["normalization_status"].eq("invalid_normalizer").all())
+        self.assertTrue(result["qc_flags"].str.contains("setup_baseline_only").all())
+        missing = quantify(samples, pd.DataFrame(), background_mode="setup_baseline")
+        self.assertTrue(missing["corrected_apc"].isna().all())
+        self.assertTrue(missing["correction_status"].eq("missing_setup_baseline").all())
+        self.assertTrue(missing["background_limitation"].eq("setup_baseline_only_reagent_background_unmeasured").all())
+
+    def test_setup_baseline_retains_batch_and_setup_matching(self):
+        for field in ("batch_id", "setup_id"):
+            with self.subTest(field=field):
+                samples, references = make_inputs()
+                references["control_type"] = "setup_beads"
+                references[field] = "different"
+                result = quantify(samples, references, background_mode="setup_baseline")
+                self.assertTrue(result["corrected_apc"].isna().all())
+                self.assertTrue(result["qc_flags"].str.contains(f"blank_{field.removesuffix('_id')}_mismatch").all())
+
+    def test_invalid_background_modes_are_rejected_without_guessing(self):
+        samples, references = make_inputs()
+        for mode in (None, "setup beads", "baseline", "", True, [], {}):
+            with self.subTest(mode=mode), self.assertRaisesRegex(ValueError, "background_mode"):
+                quantify(samples, references, background_mode=mode)
+
 
 if __name__ == "__main__":
     unittest.main()
