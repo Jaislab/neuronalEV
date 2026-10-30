@@ -150,13 +150,15 @@ class ConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ConfigurationError, "minimum_factor.*finite nonnegative"):
             load_config(path)
 
-    def test_real_template_retains_unknown_acquisition_details_and_disabled_none(self):
+    def test_real_config_keeps_study_normalization_and_is_not_mutated(self):
+        # The 2026-10-29 study enables tetraspanin normalization with a floor of 500.
         path = Path(__file__).resolve().parents[1] / "config" / "analysis.json"
         original_text = path.read_text()
         original = json.loads(original_text)
         result = load_config(path)
-        self.assertFalse(result["normalization"]["enabled"])
-        self.assertIsNone(result["normalization"]["minimum_factor"])
+        self.assertIs(result["normalization"]["enabled"], True)
+        self.assertEqual(result["normalization"]["minimum_factor"], 500)
+        self.assertEqual(result["normalization"]["markers"], ["CD9", "CD63", "CD81"])
         self.assertEqual(result["setups"], original["setups"])
         self.assertEqual(path.read_text(), original_text)
 

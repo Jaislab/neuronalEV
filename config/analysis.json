@@ -5,13 +5,13 @@
   "controls": "../metadata/controls.csv",
   "panel": "panel.csv",
   "normalization": {
-    "enabled": false,
+    "enabled": true,
     "markers": [
       "CD9",
       "CD63",
       "CD81"
     ],
-    "minimum_factor": null
+    "minimum_factor": 500
   },
   "background": {
     "mode": "setup_baseline",

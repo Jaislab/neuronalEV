@@ -5,7 +5,7 @@ This records the first analysis of real donor files. The run had **no working as
 Reproduce with the FCS files in `data/raw/` (git-ignored):
 
 ```bash
-.venv/bin/facs-neuro analyze --config config/analysis.json --output results/run-20261029-setup-baseline
+.venv/bin/facs-neuro analyze --config config/analysis.json --output results/run-20261029-setup-baseline-normalized
 ```
 
 ## Inputs
@@ -16,6 +16,7 @@ Reproduce with the FCS files in `data/raw/` (git-ignored):
 | Excluded | Sample 10: no FCS file in the export archive |
 | Reference | Setup beads, acquired 13:54 after the samples |
 | Instrument settings | Identical in all 24 files: FSC 150, SSC 120, FITC 280, PE 480, APC 520 V; FSC threshold 5000; identity spill matrix |
+| Normalization | Mean of baseline-subtracted CD9, CD63 and CD81 (datasheet section 4.1); minimum factor 500 |
 | Gates | `fortessa-20261029-v1`, derived from the setup beads; minimum 50 events per population (provisional) |
 | Not recorded | Kit lot and incubation protocol; entered as `unrecorded_single_*_run_20261029` placeholders |
 
@@ -27,6 +28,8 @@ Reproduce with the FCS files in `data/raw/` (git-ignored):
 - **APC saturation:** samples 18 and 24 each have three populations with clipped APC events (18: CD29, CD9, CD36; 24: CD29, CD47, CD49f). These are invalid.
 - **High nonspecific signal:** in samples 3, 8, 11, 4 and 9 both isotype controls read 5,000 to 20,000 above baseline, close to the tetraspanin signal. Their marker values are inflated by nonspecific binding that a real assay blank would have measured. Compare them with other samples only with that caveat, or consider excluding them.
 - **Strongest signals overall:** CD36, CD9, CD81, CD63 and CD49f.
+- **Normalization:** 19 of 23 samples are normalized, with factors from 1,494 (sample 1) to 30,245 (sample 11). Samples 5, 18, 20 and 22 are not, because at least one tetraspanin is invalid (low bead count, or APC clipping of CD9 in sample 18); the method allows no fallback. Normalized values are reported alongside the baseline-subtracted ones, which are unchanged. With normalization on, the run counts 172 measurements as failed: the 78 invalid measurements plus every unnormalized row of the four samples above.
+- **Normalization and the high-isotype samples:** CD9 and CD63 are mouse IgG1 antibodies (Table 1), so in samples 3, 4, 8, 9 and 11 the factor includes nonspecific background. Their normalized values are shrunk and can look normal without the problem being fixed; keep them flagged.
 
 ## Recommendations
 
